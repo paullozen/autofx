@@ -1,5 +1,6 @@
 # auto_srt_notion.py
 import re
+import shutil
 import textwrap
 from pathlib import Path
 from manifesto import ensure_entry, update_stage
@@ -9,6 +10,7 @@ from manifesto import ensure_entry, update_stage
 # ==========================
 INBOX_DIR = Path("scripts/txt_inbox")
 OUTPUT_DIR = Path("scripts/srt_outputs")
+PROCESSED_DIR = Path("scripts/txt_processed")
 
 WPM = 180
 MIN_DUR = 1.0
@@ -120,9 +122,11 @@ def process_base(base: str):
         extra={"sentences": len(sentences), "srt_file": str(srt_path.resolve())}
     )
     print(f"[OK] {base} → {srt_path} ({len(sentences)} frases, origem {txt_path})")
+    archive_txt(txt_path)
 
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     ensure_manifest_for_inbox()
 
     files = list_inbox_files()
@@ -158,6 +162,20 @@ def main():
     selected = entries[idx - 1]
     print(f"\n🎬 Processando: {selected}\n")
     process_base(selected)
+
+
+def archive_txt(txt_path: Path):
+    """Move txt processado para scripts/txt_processed."""
+    if not txt_path.exists():
+        return
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    dest = PROCESSED_DIR / txt_path.name
+    try:
+        shutil.move(str(txt_path), str(dest))
+        print(f"📁 TXT movido para {dest}")
+    except Exception as exc:
+        print(f"⚠️ Falha ao mover {txt_path} para {dest}: {exc}")
+
 
 if __name__ == "__main__":
     main()

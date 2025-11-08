@@ -32,4 +32,6 @@ comments/
 scripts/img_suggestions/
 scripts/srt_outputs/
 scripts/timelines/
+scripts/txt_processed/
 scripts/txt_inbox/*
+scripts/manifesto.json
