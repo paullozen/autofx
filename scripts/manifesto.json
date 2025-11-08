@@ -1,17 +1,1 @@
-{
-  "Discipline Is Power": {
-    "txt": "ready",
-    "audio": "done",
-    "srt": "done",
-    "suggestions": "error",
-    "images": "pending",
-    "timeline": "pending",
-    "video": "pending",
-    "last_update": "2025-11-08T11:05:37",
-    "sentences": 104,
-    "scenes": 0,
-    "images_saved": 0,
-    "group_size": 1,
-    "srt_file": "/home/paullozen/autofx/scripts/srt_outputs/Discipline Is Power.srt"
-  }
-}
+{}

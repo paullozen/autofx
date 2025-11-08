@@ -1,6 +1,5 @@
 # generate_audio.py
 import os
-import sys
 import time
 import boto3
 from pathlib import Path

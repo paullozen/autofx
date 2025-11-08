@@ -68,10 +68,3 @@ def set_stage(mf: dict, base: str, stage: str, status: str):
     save_manifest(mf)
 
 
-def list_candidates(stage: str, want_status=("pending",)) -> list[str]:
-    """
-    Lista as bases que possuem o estágio com status desejado.
-    Ex: list_candidates("srt", want_status=("pending",))
-    """
-    mf = load_manifest()
-    return [b for b, info in mf.items() if info.get(stage) in want_status]

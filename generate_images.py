@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import List, Dict
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 from collections import defaultdict
+from profiles import list_profiles, resolve_user_data_dir
 
 # ====== PASTAS / CONSTANTES ======
 ROOT = Path(__file__).resolve().parent
@@ -32,34 +33,18 @@ def load_text(path):
 ALL_ERRORS = defaultdict(lambda: {"total": 0, "cenas": []})
 pattern = load_text(PATTERN_PATH)
 
-# ==========================
-# PERFIS
-# ==========================
 
-
-def list_profiles() -> List[str]:
-    return [p.name for p in PROFILE_FOLDER.iterdir() if p.is_dir()] if PROFILE_FOLDER.exists() else []
-
-
-def resolve_user_data_dir(profile_dir: Path) -> Path:
-    profile_dir = Path(profile_dir)
-    default_dir = profile_dir / "Default"
-    if profile_dir.name.lower() == "default" and (profile_dir / "Preferences").exists():
-        profile_dir = profile_dir.parent
-        default_dir = profile_dir / "Default"
-    default_dir.mkdir(parents=True, exist_ok=True)
-    for lock_name in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
-        p = default_dir / lock_name
-        try:
-            if p.exists():
-                p.unlink()
-        except Exception:
-            pass
-    return profile_dir
-
-# ==========================
-# MANIFESTO
-# ==========================
+def report_errors(base: str):
+    total = sum(data["total"] for data in ALL_ERRORS.values())
+    if total == 0:
+        return
+    print(f"\n⚠️ {base}: {total} falha(s) ao gerar imagens.")
+    for profile, data in ALL_ERRORS.items():
+        if data["total"]:
+            sample = ", ".join(data["cenas"][:5])
+            suffix = "..." if len(data["cenas"]) > 5 else ""
+            print(f"   • Perfil {profile}: {data['total']} cenas (ex.: {sample}{suffix})")
+    ALL_ERRORS.clear()
 
 
 def load_manifest() -> dict:
@@ -304,119 +289,122 @@ async def process_profile(base: str,
 # ==========================
 
 async def run_for_base_with_profiles(pw, base: str, workers_per_profile: int):
-    per_profile_scenes = parse_profile_suggestions(base)
-    if not per_profile_scenes:
-        print(f"⚠️ {base}: não encontrei arquivos '<base>__<perfil>.txt' em {SUGGESTIONS_DIR/base}")
-        return
+    try:
+        per_profile_scenes = parse_profile_suggestions(base)
+        if not per_profile_scenes:
+            print(f"⚠️ {base}: não encontrei arquivos '<base>__<perfil>.txt' em {SUGGESTIONS_DIR/base}")
+            return
 
-    available_profiles = set(list_profiles())
-    chosen = [(p, scene_map) for p, scene_map in per_profile_scenes.items() if p in available_profiles]
-    missing = [p for p in per_profile_scenes.keys() if p not in available_profiles]
-    if missing:
-        print(f"⚠️ Perfis inexistentes (ignorando): {missing}")
-    if not chosen:
-        print(f"❌ Nenhum perfil válido encontrado para {base}.")
-        return
+        available_profiles = set(list_profiles())
+        chosen = [(p, scene_map) for p, scene_map in per_profile_scenes.items() if p in available_profiles]
+        missing = [p for p in per_profile_scenes.keys() if p not in available_profiles]
+        if missing:
+            print(f"⚠️ Perfis inexistentes (ignorando): {missing}")
+        if not chosen:
+            print(f"❌ Nenhum perfil válido encontrado para {base}.")
+            return
 
-    pending_chosen = []
-    for profile, scene_map in chosen:
-        scene_ids = sorted(scene_map.keys())
-        tem_pendencia = any(not is_scene_complete(base, sid) for sid in scene_ids)
-        if tem_pendencia:
-            pending_chosen.append((profile, scene_map))
-        else:
-            print(f"✅ {base} / perfil '{profile}': já concluído, não será aberto.")
+        pending_chosen = []
+        for profile, scene_map in chosen:
+            scene_ids = sorted(scene_map.keys())
+            tem_pendencia = any(not is_scene_complete(base, sid) for sid in scene_ids)
+            if tem_pendencia:
+                pending_chosen.append((profile, scene_map))
+            else:
+                print(f"✅ {base} / perfil '{profile}': já concluído, não será aberto.")
 
-    if not pending_chosen:
-        mf_final = load_manifest()
+        if not pending_chosen:
+            mf_final = load_manifest()
+            all_scene_ids = sorted({sid for _, m in chosen for sid in m.keys()})
+            total = max(all_scene_ids) if all_scene_ids else 0
+            set_images_status(mf_final, base, "done", images_saved=total)
+            print(f"🏁 {base}: nada pendente em nenhum perfil. Marcado como done.")
+            return
+
+        mf = load_manifest()
+        if base not in mf:
+            mf[base] = {"images": "in_progress", "images_saved": 0}
+            save_manifest(mf)
+        elif mf[base].get("images") not in ("pending", "in_progress"):
+            mf[base]["images"] = "in_progress"
+            save_manifest(mf)
+
+        # === ETAPA 1: abrir apenas perfis com pendências ===
+        contexts = []
+        for idx, (profile, _) in enumerate(pending_chosen):
+            user_data_dir = resolve_user_data_dir(profile)
+            ctx = await pw.chromium.launch_persistent_context(
+                user_data_dir=str(user_data_dir),
+                headless=True,
+                channel="chrome",
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--disable-infobars",
+                ],
+            )
+            await ctx.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                if (!window.chrome) window.chrome = { runtime: {} };
+            """)
+            contexts.append((profile, ctx))
+            if idx < len(pending_chosen) - 1:
+                await asyncio.sleep(1.0)
+
+        # === ETAPA 2: imprimir pendências ===
+        print("\n")
+        print("=" * 60)
+        print(f"🎬 RESUMO DE CENAS PENDENTES\n")
+        all_pendentes = {}
+
+        for (profile, ctx), (_, scene_map) in zip(contexts, pending_chosen):
+            scene_ids = sorted(scene_map.keys())
+            pendentes = [sid for sid in scene_ids if not is_scene_complete(base, sid)]
+            if pendentes:
+                all_pendentes[profile] = pendentes
+                print(f"🎯 {base} / perfil '{profile}': {len(pendentes)} cenas pendentes "
+                      f"(ex.: {pendentes[:10]}{' ...' if len(pendentes)>10 else ''})")
+
+        if not all_pendentes:
+            print(f"✅ {base}: nenhum perfil com pendências.")
+            return
+
+        # === ETAPA 3: criar progresso ===
+        print("\n## PROGRESS:")
+        print("-" * 60)
+
+        supervisors = []
+        position = 0
+        for (profile, ctx), (_, scene_map) in zip(contexts, pending_chosen):
+            pendentes = all_pendentes.get(profile)
+            if not pendentes:
+                continue
+            supervisors.append(asyncio.create_task(
+                process_profile(base, profile, ctx, scene_map, pendentes, workers_per_profile, position)
+            ))
+            position += 1
+
+        print("-" * 60)
+
+        # Cada perfil fecha seu próprio browser ao terminar
+        await asyncio.gather(*supervisors, return_exceptions=True)
+
         all_scene_ids = sorted({sid for _, m in chosen for sid in m.keys()})
-        total = max(all_scene_ids) if all_scene_ids else 0
-        set_images_status(mf_final, base, "done", images_saved=total)
-        print(f"🏁 {base}: nada pendente em nenhum perfil. Marcado como done.")
-        return
-
-    mf = load_manifest()
-    if base not in mf:
-        mf[base] = {"images": "in_progress", "images_saved": 0}
-        save_manifest(mf)
-    elif mf[base].get("images") not in ("pending", "in_progress"):
-        mf[base]["images"] = "in_progress"
-        save_manifest(mf)
-
-# === ETAPA 1: abrir apenas perfis com pendências ===
-    contexts = []
-    for i, (profile, _) in enumerate(pending_chosen):
-        user_data_dir = resolve_user_data_dir(PROFILE_FOLDER / profile)
-        ctx = await pw.chromium.launch_persistent_context(
-            user_data_dir=str(user_data_dir),
-            headless=False,
-            channel="chrome",
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-first-run",
-                "--no-default-browser-check",
-                "--disable-infobars",
-            ],
-        )
-        await ctx.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-            if (!window.chrome) window.chrome = { runtime: {} };
-        """)
-        contexts.append((profile, ctx))
-        if i < len(pending_chosen) - 1:
-            await asyncio.sleep(1.0)
-
-    # === ETAPA 2: imprimir pendências ===
-    print("\n")
-    print("=" * 60)
-    print(f"🎬 RESUMO DE CENAS PENDENTES\n")
-    all_pendentes = {}
-
-    for (profile, ctx), (_, scene_map) in zip(contexts, pending_chosen):
-        scene_ids = sorted(scene_map.keys())
-        pendentes = [sid for sid in scene_ids if not is_scene_complete(base, sid)]
-        if pendentes:
-            all_pendentes[profile] = pendentes
-            print(f"🎯 {base} / perfil '{profile}': {len(pendentes)} cenas pendentes "
-                f"(ex.: {pendentes[:10]}{' ...' if len(pendentes)>10 else ''})")
-
-    if not all_pendentes:
-        print(f"✅ {base}: nenhum perfil com pendências.")
-        return
-
-    # === ETAPA 3: criar progresso ===
-    print("\n## PROGRESS:")
-    print("-" * 60)
-
-    supervisors = []
-    position = 0
-    for (profile, ctx), (_, scene_map) in zip(contexts, pending_chosen):
-        pendentes = all_pendentes.get(profile)
-        if not pendentes:
-            continue
-        supervisors.append(asyncio.create_task(
-            process_profile(base, profile, ctx, scene_map, pendentes, workers_per_profile, position)
-        ))
-        position += 1
-
-    print("-" * 60)
-
-    # Cada perfil fecha seu próprio browser ao terminar
-    await asyncio.gather(*supervisors, return_exceptions=True)
-
-    all_scene_ids = sorted({sid for _, m in chosen for sid in m.keys()})
-    if not all_scene_ids:
-        return
-    total = max(all_scene_ids)
-    restam = [sid for sid in all_scene_ids if not is_scene_complete(base, sid)]
-    mf_final = load_manifest()
-    if not restam:
-        set_images_status(mf_final, base, "done", images_saved=total)
-        print(f"\n🏁 Concluído: {base} ({total}/{total})")
-    else:
-        maior = max([sid for sid in all_scene_ids if is_scene_complete(base, sid)], default=0)
-        set_images_status(mf_final, base, "in_progress", images_saved=maior)
-        print(f"\n⏸️ Parcial: {base} (faltando {len(restam)} cenas) — mantendo 'in_progress'")
+        if not all_scene_ids:
+            return
+        total = max(all_scene_ids)
+        restam = [sid for sid in all_scene_ids if not is_scene_complete(base, sid)]
+        mf_final = load_manifest()
+        if not restam:
+            set_images_status(mf_final, base, "done", images_saved=total)
+            print(f"\n🏁 Concluído: {base} ({total}/{total})")
+        else:
+            maior = max([sid for sid in all_scene_ids if is_scene_complete(base, sid)], default=0)
+            set_images_status(mf_final, base, "in_progress", images_saved=maior)
+            print(f"\n⏸️ Parcial: {base} (faltando {len(restam)} cenas) — mantendo 'in_progress'")
+    finally:
+        report_errors(base)
 
 # ==========================
 # MAIN

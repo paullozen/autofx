@@ -119,8 +119,6 @@ def process_base(base: str):
         "done",
         extra={"sentences": len(sentences), "srt_file": str(srt_path.resolve())}
     )
-    update_stage(base, "audio", "done")
-
     print(f"[OK] {base} → {srt_path} ({len(sentences)} frases, origem {txt_path})")
 
 def main():

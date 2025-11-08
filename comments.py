@@ -69,7 +69,6 @@ def get_video_comments(api_key, video_id, max_results=5000):
     """Obtém os comentários de um vídeo, numera e salva com o título"""
     youtube = googleapiclient.discovery.build("youtube", "v3", developerKey=api_key)
 
-    comments = []
     next_page_token = None
 
     # Busca o título do vídeo
@@ -79,11 +78,12 @@ def get_video_comments(api_key, video_id, max_results=5000):
 
     with open(output_file, "w", encoding="utf-8") as f:
         index = 1
-        while len(comments) < max_results:
+        total_saved = 0
+        while total_saved < max_results:
             request = youtube.commentThreads().list(
                 part="snippet",
                 videoId=video_id,
-                maxResults=min(100, max_results - len(comments)),
+                maxResults=min(100, max_results - total_saved),
                 pageToken=next_page_token
             )
             response = request.execute()
@@ -91,18 +91,18 @@ def get_video_comments(api_key, video_id, max_results=5000):
             for item in response.get('items', []):
                 comment = item['snippet']['topLevelComment']['snippet']['textDisplay']
                 cleaned_comment = clean_comment(comment)
-                comments.append(cleaned_comment)
                 f.write(f"{index}. {cleaned_comment}\n\n")
                 index += 1
+                total_saved += 1
 
-                if len(comments) >= max_results:
+                if total_saved >= max_results:
                     break
 
             next_page_token = response.get('nextPageToken')
             if not next_page_token:
                 break
 
-    return output_file, len(comments), title
+    return output_file, total_saved, title
 
 def extract_video_id(video_input):
     """Extrai o video_id de diferentes formatos de URL"""

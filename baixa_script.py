@@ -3,22 +3,14 @@ import re
 from pathlib import Path
 from dotenv import load_dotenv
 from notion_client import Client
+from notion_utils import normalize_notion_id
 
 # ==========================
 # CONFIG
 # ==========================
-def _normalize_id(value: str | None) -> str | None:
-    if not value:
-        return value
-    raw = value.replace("-", "").strip()
-    if len(raw) == 32:
-        return f"{raw[0:8]}-{raw[8:12]}-{raw[12:16]}-{raw[16:20]}-{raw[20:]}"
-    return value.strip()
-
-
 load_dotenv()
 NOTION_TOKEN = os.getenv("NOTION_TOKEN")
-DATABASE_ID = _normalize_id(os.getenv("NOTION_DATABASE_ID"))
+DATABASE_ID = normalize_notion_id(os.getenv("NOTION_DATABASE_ID"))
 
 if not NOTION_TOKEN or not DATABASE_ID:
     raise RuntimeError("Missing NOTION_TOKEN or NOTION_DATABASE_ID in environment.")

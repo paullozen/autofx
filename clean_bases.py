@@ -79,15 +79,23 @@ def select_videos(manifest_data):
 
 def clean_video_files(video_name):
     """Apaga todos os arquivos relacionados ao vídeo."""
-    paths_to_clean = [
+    candidates = [
+        VIDEOS_DIR / f"{video_name}.mp4",
+        RENDER_DIR / f"{video_name}.mp4",
+        SCRIPTS_RENDER_DIR / f"{video_name}.mp4",
         VIDEOS_DIR / video_name,
         IMGS_DIR / video_name,
         RENDER_DIR / video_name,
         SCRIPTS_RENDER_DIR / video_name,
     ]
-    for p in paths_to_clean:
+    seen = set()
+    for p in candidates:
+        key = str(p.resolve())
+        if key in seen:
+            continue
         if p.exists():
             delete_path(p)
+            seen.add(key)
 
 # ========================
 # MAIN

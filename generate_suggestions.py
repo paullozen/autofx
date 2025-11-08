@@ -3,6 +3,7 @@ import os
 import sys
 from pathlib import Path
 from manifesto import ensure_entry, update_stage, load_manifest
+from profiles import list_profiles, choose_profiles
 from dotenv import load_dotenv
 from openai import OpenAI
 from tqdm import tqdm
@@ -25,7 +26,6 @@ def list_ready_for_suggestions() -> list[str]:
 # CONFIG
 # ==========================
 ROOT         = Path(__file__).resolve().parent
-PROFILE_DIR  = ROOT / "chrome_profiles"  # para listar perfis criados
 INPUT_DIR    = "scripts/srt_outputs"
 OUTPUT_DIR   = "scripts/img_suggestions"
 # PATTERN_PATH = "prompts/MOT_PATTERN.txt"
@@ -111,39 +111,6 @@ def ensure_manifest_for_inbox():
         if f.endswith(".srt"):
             base = Path(f).stem
             ensure_entry(base)
-
-def list_profiles():
-    """Lista nomes de pastas dentro de chrome_profiles (perfis)."""
-    if not PROFILE_DIR.exists():
-        return []
-    return [p.name for p in PROFILE_DIR.iterdir() if p.is_dir()]
-
-def choose_profiles(profiles: list[str]) -> list[str]:
-    """
-    Mostra os perfis e permite escolher vários por número ou '0' para todos.
-    Retorna a lista de nomes escolhidos.
-    """
-    if not profiles:
-        print("⚠️ Nenhum perfil encontrado em chrome_profiles/. Seguindo com 1 'default'.")
-        return ["default"]
-
-    print("\n👤 Perfis disponíveis:")
-    for i, name in enumerate(profiles, 1):
-        print(f"{i}. {name}")
-    print("0. TODOS")
-
-    raw = input("➡️ Selecione perfis (ex: 1 3 4 ou '0' p/ todos): ").strip().lower()
-    if raw == "0" or raw == "todos":
-        return profiles
-    try:
-        idxs = [int(x) for x in raw.replace(",", " ").split()]
-        chosen = [profiles[i-1] for i in idxs if 1 <= i <= len(profiles)]
-        if not chosen:
-            raise ValueError
-        return chosen
-    except Exception:
-        print("❌ Entrada inválida. Usando apenas o primeiro perfil.")
-        return [profiles[0]]
 
 # ==========================
 # CORE
