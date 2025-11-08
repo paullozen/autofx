@@ -1,0 +1,34 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+build/
+dist/
+
+# Environments & tooling
+.env
+.env.*
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.*
+htmlcov/
+.idea/
+.vscode/
+
+# Generated assets & local data
+chrome_profiles/
+audio/
+videos/
+render_output/
+imgs_output/
+comments/
+scripts/img_suggestions/
+scripts/srt_outputs/
+scripts/timelines/

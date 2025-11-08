@@ -1,0 +1,9 @@
+boto3
+google-api-python-client
+notion-client
+numpy
+openai
+opencv-python
+playwright
+python-dotenv
+tqdm
