@@ -1,6 +1,5 @@
 # make_and_render.py (OpenCV, com ajuste automático de duração por imagem + seleção manual)
 import json
-import shutil
 from pathlib import Path
 from typing import Tuple, Optional
 import cv2
@@ -15,17 +14,12 @@ SRT_DIR        = Path("scripts/srt_outputs")
 TIMELINE_DIR   = Path("scripts/timelines")
 IMGS_DIR       = Path("imgs_output")
 OUTPUT_DIR     = Path("render_output")
-IMG_SUGGESTIONS_DIR = Path("scripts/img_suggestions")
-AUDIO_DIR      = Path("audio")
-VIDEOS_DIR     = Path("videos")
-TXT_INBOX      = Path("scripts/txt_inbox")
-TXT_PROCESSED  = Path("scripts/txt_processed")
 
 FPS = 30  # FPS fixo do vídeo
 FOURCCS_TRY = ["mp4v", "avc1", "X264", "H264", "MJPG"]
 
 # make sure output directories exist
-for d in (TIMELINE_DIR, OUTPUT_DIR, TXT_PROCESSED):
+for d in (TIMELINE_DIR, OUTPUT_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
 # ======================
@@ -173,67 +167,6 @@ def open_writer(out_path: Path, size: Tuple[int, int]):
     return None
 
 
-def move_txt_to_processed(base: str):
-    src = TXT_INBOX / f"{base}.txt"
-    if not src.exists():
-        return
-    TXT_PROCESSED.mkdir(parents=True, exist_ok=True)
-    dest = TXT_PROCESSED / src.name
-    try:
-        shutil.move(str(src), str(dest))
-        print(f"📁 TXT movido para processados: {dest}")
-    except Exception as exc:
-        print(f"⚠️ Não foi possível mover {src} para {dest}: {exc}")
-
-
-def move_final_video(temp_path: Optional[Path]) -> Optional[Path]:
-    if not temp_path or not temp_path.exists():
-        return None
-    VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
-    dest = VIDEOS_DIR / temp_path.name
-    try:
-        if dest.exists():
-            dest.unlink()
-        shutil.move(str(temp_path), str(dest))
-        print(f"🎞️ Vídeo final movido para {dest}")
-        return dest
-    except Exception as exc:
-        print(f"⚠️ Falha ao mover vídeo para {dest}: {exc}")
-        return temp_path
-
-
-def cleanup_base_artifacts(base: str, delivered_video: Optional[Path]):
-    """Remove pastas e arquivos intermediários relacionados ao base."""
-    dir_candidates = [
-        IMGS_DIR / base,
-        IMG_SUGGESTIONS_DIR / base,
-    ]
-    for d in dir_candidates:
-        if d.exists():
-            try:
-                shutil.rmtree(d)
-                print(f"🧹 Pasta removida: {d}")
-            except Exception as exc:
-                print(f"⚠️ Falha ao remover pasta {d}: {exc}")
-
-    delivered_resolved = delivered_video.resolve() if delivered_video else None
-    file_candidates = [
-        TIMELINE_DIR / f"{base}_timeline.json",
-        SRT_DIR / f"{base}.srt",
-        OUTPUT_DIR / f"{base}.mp4",
-        AUDIO_DIR / f"{base}.mp3",
-    ]
-    for file_path in file_candidates:
-        if not file_path.exists():
-            continue
-        if delivered_resolved and file_path.resolve() == delivered_resolved:
-            continue
-        try:
-            file_path.unlink()
-            print(f"🗑️ Arquivo removido: {file_path}")
-        except Exception as exc:
-            print(f"⚠️ Falha ao remover arquivo {file_path}: {exc}")
-
 # ======================
 # SELEÇÃO
 # ======================
@@ -308,12 +241,10 @@ def render_video(base: str, timeline_path: Path):
         writer.release()
         print(f"✅ Vídeo finalizado ({total_frames} frames): {out_path}")
         update_stage(base, "video", "done")
-        return out_path
 
     except Exception as e:
         print(f"❌ Erro ao gerar vídeo para {base}: {e}")
         update_stage(base, "video", "error")
-        return None
 
 # ======================
 # MAIN
@@ -331,10 +262,7 @@ def main():
             continue
         update_stage(base, "timeline", "done")
         update_stage(base, "video", "in_progress")
-        tmp_video = render_video(base, timeline_path)
-        final_video = move_final_video(tmp_video) if tmp_video else None
-        move_txt_to_processed(base)
-        cleanup_base_artifacts(base, final_video)
+        render_video(base, timeline_path)
 
 if __name__ == "__main__":
     main()

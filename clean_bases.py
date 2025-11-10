@@ -12,6 +12,12 @@ VIDEOS_DIR = ROOT / "videos"
 IMGS_DIR = ROOT / "imgs_output"
 RENDER_DIR = ROOT / "render_output"
 SCRIPTS_RENDER_DIR = SCRIPTS / "render_output"
+SRT_DIR = SCRIPTS / "srt_outputs"
+TIMELINE_DIR = SCRIPTS / "timelines"
+IMG_SUGGESTIONS_DIR = SCRIPTS / "img_suggestions"
+TXT_INBOX = SCRIPTS / "txt_inbox"
+TXT_PROCESSED = SCRIPTS / "txt_processed"
+AUDIO_DIR = ROOT / "audio"
 
 # ========================
 # HELPERS
@@ -78,24 +84,38 @@ def select_videos(manifest_data):
         return []
 
 def clean_video_files(video_name):
-    """Apaga todos os arquivos relacionados ao vídeo."""
-    candidates = [
-        VIDEOS_DIR / f"{video_name}.mp4",
-        RENDER_DIR / f"{video_name}.mp4",
-        SCRIPTS_RENDER_DIR / f"{video_name}.mp4",
-        VIDEOS_DIR / video_name,
+    """Apaga todos os arquivos relacionados ao vídeo e move TXT processado."""
+    # Pastas primeiro
+    dir_candidates = [
         IMGS_DIR / video_name,
+        (IMG_SUGGESTIONS_DIR / video_name),
+        VIDEOS_DIR / video_name,
         RENDER_DIR / video_name,
         SCRIPTS_RENDER_DIR / video_name,
     ]
+    for path in dir_candidates:
+        if path.exists():
+            delete_path(path)
+
+    # Arquivos específicos
+    file_candidates = [
+        VIDEOS_DIR / f"{video_name}.mp4",
+        RENDER_DIR / f"{video_name}.mp4",
+        SCRIPTS_RENDER_DIR / f"{video_name}.mp4",
+        SRT_DIR / f"{video_name}.srt",
+        TIMELINE_DIR / f"{video_name}_timeline.json",
+        AUDIO_DIR / f"{video_name}.mp3",
+    ]
     seen = set()
-    for p in candidates:
-        key = str(p.resolve())
-        if key in seen:
-            continue
-        if p.exists():
-            delete_path(p)
+    for path in file_candidates:
+        if path.exists():
+            key = str(path.resolve())
+            if key in seen:
+                continue
+            delete_path(path)
             seen.add(key)
+
+    move_txt_to_processed(video_name)
 
 # ========================
 # MAIN
@@ -121,3 +141,18 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def move_txt_to_processed(base_name: str):
+    TXT_PROCESSED.mkdir(parents=True, exist_ok=True)
+    src = TXT_INBOX / f"{base_name}.txt"
+    if not src.exists():
+        return
+    dest = TXT_PROCESSED / src.name
+    try:
+        if dest.exists():
+            dest.unlink()
+        src.replace(dest)
+        print(f"📁 TXT movido para {dest}")
+    except Exception as exc:
+        print(f"⚠️ Falha ao mover {src}: {exc}")
