@@ -14,12 +14,31 @@ OUTPUT_DIR = SRT_OUTPUT_DIR
 PROCESSED_DIR = TXT_PROCESSED_DIR
 
 WPM = 180
-MIN_DUR = 1.0
-MAX_DUR = 6.0
-MAX_CHARS_LINE = 42
-MAX_LINES = 2
-GAP = 0.8
+BASE_MIN_DUR = 1.0
+BASE_MAX_DUR = 6.0
+BASE_MAX_CHARS_LINE = 42
+BASE_MAX_LINES = 2
+MIN_DUR = BASE_MIN_DUR
+MAX_DUR = BASE_MAX_DUR
+MAX_CHARS_LINE = BASE_MAX_CHARS_LINE
+MAX_LINES = BASE_MAX_LINES
+LINES_PER_TIMESTAMP = BASE_MAX_LINES
+GAP = 10
 EXTRA_PAUSE = 0.3
+
+
+def configure_caption_settings(lines_per_timestamp: int):
+    """Scale SRT timing + wrapping constraints based on desired lines per entry."""
+    global MIN_DUR, MAX_DUR, MAX_CHARS_LINE, MAX_LINES, LINES_PER_TIMESTAMP
+    lines = max(1, lines_per_timestamp)
+    factor = lines / BASE_MAX_LINES
+    MIN_DUR = round(BASE_MIN_DUR * factor, 2)
+    MAX_DUR = round(BASE_MAX_DUR * factor, 2)
+    # Allow wider lines but keep them somewhat readable.
+    scaled_chars = int(BASE_MAX_CHARS_LINE * min(factor, 4))
+    MAX_CHARS_LINE = min(200, max(BASE_MAX_CHARS_LINE, scaled_chars))
+    MAX_LINES = lines
+    LINES_PER_TIMESTAMP = lines
 
 # ==========================
 # HELPERS
@@ -54,16 +73,32 @@ def split_into_sentences(text: str):
     return [s.strip() for s in sentences if s.strip()]
 
 
+def chunk_sentences(sentences: list[str], per_timestamp: int) -> list[str]:
+    chunk_size = max(1, per_timestamp)
+    block, grouped = [], []
+    for sentence in sentences:
+        if not sentence:
+            continue
+        block.append(sentence)
+        if len(block) >= chunk_size:
+            grouped.append(" ".join(block).strip())
+            block = []
+    if block:
+        grouped.append(" ".join(block).strip())
+    return grouped
+
+
 def build_srt(sentences):
     srt_lines, current_time = [], 0.0
-    for idx, sentence in enumerate(sentences, start=1):
-        duration = estimate_duration(sentence)
+    grouped_sentences = chunk_sentences(sentences, LINES_PER_TIMESTAMP)
+    for idx, chunk_text in enumerate(grouped_sentences, start=1):
+        duration = estimate_duration(chunk_text)
         start_time = current_time if idx == 1 else current_time + GAP
         end_time = start_time + duration
 
         srt_lines.append(f"{idx}")
         srt_lines.append(f"{seconds_to_timestamp(start_time)} --> {seconds_to_timestamp(end_time)}")
-        srt_lines.append(wrap_text(sentence))
+        srt_lines.append(wrap_text(chunk_text))
         srt_lines.append("")
 
         current_time = end_time
@@ -90,6 +125,14 @@ def read_script(base: str) -> tuple[str | None, Path]:
 def ensure_manifest_for_inbox():
     for txt in list_inbox_files():
         ensure_entry(txt.stem)
+
+
+def count_sentences_for_base(base: str) -> tuple[int | None, Path]:
+    raw, txt_path = read_script(base)
+    if raw is None:
+        return None, txt_path
+    sentences = split_into_sentences(raw)
+    return len(sentences), txt_path
 
 
 def process_base(base: str):
@@ -146,27 +189,41 @@ def main():
         return
 
     if choice == "0":
-        print("\n🔁 Processando todos os arquivos da inbox...")
-        for name in entries:
-            process_base(name)
-        return
+        selected = entries
+    else:
+        try:
+            idx = int(choice)
+            if idx < 1 or idx > len(entries):
+                print("Número inválido.")
+                return
+        except ValueError:
+            print("Entrada inválida.")
+            return
+        selected = [entries[idx - 1]]
+
+    print("\n🧮 Contagem de frases por script selecionado:")
+    for name in selected:
+        count, txt_path = count_sentences_for_base(name)
+        if count is None:
+            print(f" - {name}: arquivo não encontrado ({txt_path})")
+        else:
+            print(f" - {name}: {count} frases detectadas")
 
     try:
-        idx = int(choice)
-        if idx < 1 or idx > len(entries):
-            print("Número inválido.")
-            return
+        lines_raw = input("➡️ Quantas linhas o SRT deve agrupar por timestamp? (ENTER = 2): ").strip()
+        lines_per_timestamp = int(lines_raw) if lines_raw else BASE_MAX_LINES
     except ValueError:
-        print("Entrada inválida.")
-        return
+        lines_per_timestamp = BASE_MAX_LINES
+    configure_caption_settings(lines_per_timestamp)
+    print(f"⚙️ Configurado: {LINES_PER_TIMESTAMP} linhas/timestamp, {MAX_CHARS_LINE} chars/linha, duração {MIN_DUR}-{MAX_DUR}s.")
 
-    selected = entries[idx - 1]
-    print(f"\n🎬 Processando: {selected}\n")
-    process_base(selected)
+    print("\n🎬 Processando seleção...\n")
+    for name in selected:
+        process_base(name)
 
 
 def archive_txt(txt_path: Path):
-    """Move txt processado para output/scripts/txt_processed."""
+    """Move txt processado para output/txt_processed."""
     if not txt_path.exists():
         return
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)

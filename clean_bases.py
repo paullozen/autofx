@@ -14,7 +14,6 @@ from paths import (
     TXT_PROCESSED_DIR,
     AUDIO_OUTPUT_DIR,
     OUTPUT_ROOT,
-    SCRIPTS_ROOT,
 )
 
 # ========================
@@ -129,23 +128,16 @@ def clean_video_files(video_name):
     # move_txt_to_processed(video_name)
 
 def purge_output_except_txt_processed():
-    """Remove tudo em output/ exceto output/scripts/txt_processed."""
+    """Remove tudo em output/ exceto output/txt_processed."""
     if not OUTPUT_ROOT.exists():
         return
 
     preserved = TXT_PROCESSED_DIR.resolve()
-    scripts_root = SCRIPTS_ROOT.resolve()
 
     print("\n🧨 Limpando conteúdo de output/ (exceto txt_processed)...")
     for child in OUTPUT_ROOT.iterdir():
         resolved = child.resolve()
         if resolved == preserved:
-            continue
-        if resolved == scripts_root:
-            for script_child in child.iterdir():
-                if script_child.resolve() == preserved:
-                    continue
-                delete_path(script_child)
             continue
         delete_path(child)
 

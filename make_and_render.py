@@ -31,6 +31,20 @@ for d in (TIMELINE_DIR, OUTPUT_DIR):
 # ======================
 # HELPERS
 # ======================
+def list_image_variants(base: str) -> list[str]:
+    """Return sorted list of variant folders (e.g., _01, _02) inside imgs_output/<base>."""
+    root = IMGS_DIR / base
+    if not root.exists():
+        return []
+    variants = [p.name for p in root.iterdir() if p.is_dir()]
+
+    def sort_key(name: str):
+        digits = "".join(ch for ch in name if ch.isdigit())
+        return (int(digits) if digits else 0, name)
+
+    return sorted(variants, key=sort_key)
+
+
 def imread_u8(path_str: str):
     try:
         data = np.fromfile(path_str, dtype=np.uint8)
@@ -69,12 +83,12 @@ def parse_srt(srt_path: Path):
         })
     return scenes
 
-def merge_timeline_by_images(base: str, scenes: list):
+def merge_timeline_by_images(base: str, scenes: list, variant: str):
     """
     Ajusta o timeline automaticamente com base na quantidade de imagens.
     Se há menos imagens que cenas SRT, agrupa as falas e soma suas durações.
     """
-    img_root = IMGS_DIR / base / "_01"
+    img_root = IMGS_DIR / base / variant
     imgs = sorted(img_root.glob("*.jpg"))
 
     if not imgs or not scenes:
@@ -90,7 +104,7 @@ def merge_timeline_by_images(base: str, scenes: list):
                 s["file"] = str(imgs[i])
         return scenes
 
-    print(f"🔁 {base}: ajustando durações ({num_scenes} falas → {num_imgs} imagens, ~{group_size} falas/img)")
+    print(f"🔁 {base}{variant}: ajustando durações ({num_scenes} falas → {num_imgs} imagens, ~{group_size} falas/img)")
 
     merged = []
     for i in range(0, num_scenes, group_size):
@@ -110,34 +124,36 @@ def merge_timeline_by_images(base: str, scenes: list):
         })
     return merged
 
-def try_build_timeline(base: str) -> Optional[Path]:
+def try_build_timeline(base: str, variant: str) -> Optional[Path]:
     """Cria ou atualiza o timeline.json conforme o SRT e imagens."""
     srt_path = SRT_DIR / f"{base}.srt"
-    timeline_path = TIMELINE_DIR / f"{base}_timeline.json"
+    timeline_path = TIMELINE_DIR / f"{base}{variant}_timeline.json"
 
     if not srt_path.exists() and not timeline_path.exists():
-        print(f"❌ Sem SRT e sem timeline para {base}")
+        print(f"❌ Sem SRT e sem timeline para {base}{variant}")
         return None
 
-    if not timeline_path.exists():
-        print(f"📝 Construindo timeline para {base} (a partir do SRT)...")
-        scenes = parse_srt(srt_path)
-        merged = merge_timeline_by_images(base, scenes)
-        data = {"base": base, "scenes": merged}
-        timeline_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-        print(f"✅ Timeline salva: {timeline_path}")
-        return timeline_path
+    scenes_source = []
+    if timeline_path.exists():
+        try:
+            data = json.loads(timeline_path.read_text(encoding="utf-8"))
+            scenes_source = data.get("scenes", [])
+        except Exception as e:
+            print(f"⚠️ Falha ao ler timeline existente ({timeline_path}): {e}")
+            scenes_source = []
 
-    try:
-        data = json.loads(timeline_path.read_text(encoding="utf-8"))
-        scenes = data.get("scenes", [])
-        merged = merge_timeline_by_images(base, scenes)
-        timeline_path.write_text(json.dumps({"base": base, "scenes": merged}, indent=2, ensure_ascii=False), encoding="utf-8")
-        print(f"🩹 Timeline atualizada: {timeline_path}")
-        return timeline_path
-    except Exception as e:
-        print(f"⚠️ Falha ao ler timeline existente ({timeline_path}): {e}")
-        return None
+    if not scenes_source:
+        if not srt_path.exists():
+            print(f"❌ SRT ausente para {base}, não foi possível construir timeline {variant}.")
+            return None
+        scenes_source = parse_srt(srt_path)
+        print(f"📝 Construindo timeline para {base}{variant} (a partir do SRT)...")
+
+    merged = merge_timeline_by_images(base, scenes_source, variant)
+    data = {"base": base, "variant": variant, "scenes": merged}
+    timeline_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"✅ Timeline salva/atualizada: {timeline_path}")
+    return timeline_path
 
 def letterbox(img: np.ndarray, target_wh: Tuple[int, int]) -> np.ndarray:
     th, tw = target_wh[1], target_wh[0]
@@ -201,32 +217,68 @@ def select_bases_with_images_done(mf: dict):
         print("⚠️ Entrada inválida. Abortando.")
         return []
 
+
+def choose_variants_for_base(base: str, variants: list[str]) -> list[str]:
+    """
+    Permite escolher quais variações (_01, _02, etc.) renderizar para a base.
+    ENTER = todas; 0 = pular base.
+    """
+    if not variants:
+        return []
+
+    print(f"\n🎨 Variações disponíveis para {base}:")
+    for idx, name in enumerate(variants, start=1):
+        print(f"  {idx}. {name}")
+    print("  0. Pular esta base")
+
+    raw = input("➡️ Escolha variações (ex: 1,3 ou '_02') — ENTER = todas: ").strip()
+    if not raw:
+        return variants[:]  # todas
+    if raw == "0":
+        print(f"⏭️ Base {base} pulada.")
+        return []
+
+    tokens = [t.strip() for t in raw.replace(";", ",").split(",") if t.strip()]
+    chosen: list[str] = []
+    for token in tokens:
+        variant_name = None
+        if token.isdigit():
+            idx = int(token)
+            if 1 <= idx <= len(variants):
+                variant_name = variants[idx - 1]
+        else:
+            if token in variants:
+                variant_name = token
+        if variant_name and variant_name not in chosen:
+            chosen.append(variant_name)
+
+    if not chosen:
+        print(f"⚠️ Nenhuma variação válida selecionada para {base}.")
+    return chosen
+
 # ======================
 # RENDER
 # ======================
-def render_video(base: str, timeline_path: Path):
-    out_path = OUTPUT_DIR / f"{base}.mp4"
+def render_video(base: str, timeline_path: Path, variant: str) -> bool:
+    out_path = OUTPUT_DIR / f"{base}{variant}.mp4"
 
     try:
         data = json.loads(timeline_path.read_text(encoding="utf-8"))
         scenes = data.get("scenes", [])
 
         if not scenes:
-            print(f"⚠️ Timeline vazia para {base}")
-            update_stage(base, "video", "error")
-            return
+            print(f"⚠️ Timeline vazia para {base}{variant}")
+            return False
 
         size = first_valid_frame_size(scenes)
         if not size:
-            print(f"⚠️ Nenhuma imagem válida encontrada em {base}")
-            update_stage(base, "video", "error")
-            return
+            print(f"⚠️ Nenhuma imagem válida encontrada em {base}{variant}")
+            return False
 
         writer = open_writer(out_path, size)
         if writer is None:
             print("❌ Não foi possível abrir VideoWriter.")
-            update_stage(base, "video", "error")
-            return
+            return False
 
         total_frames = 0
         for s in scenes:
@@ -246,11 +298,11 @@ def render_video(base: str, timeline_path: Path):
 
         writer.release()
         print(f"✅ Vídeo finalizado ({total_frames} frames): {out_path}")
-        update_stage(base, "video", "done")
+        return True
 
     except Exception as e:
-        print(f"❌ Erro ao gerar vídeo para {base}: {e}")
-        update_stage(base, "video", "error")
+        print(f"❌ Erro ao gerar vídeo para {base}{variant}: {e}")
+        return False
 
 # ======================
 # MAIN
@@ -263,12 +315,36 @@ def main():
         return
 
     for base in selected_bases:
-        timeline_path = try_build_timeline(base)
-        if not timeline_path:
+        variants = list_image_variants(base)
+        if not variants:
+            print(f"⚠️ Nenhuma variação de imagens encontrada em {IMGS_DIR / base}.")
+            update_stage(base, "timeline", "error")
+            update_stage(base, "video", "error")
             continue
-        update_stage(base, "timeline", "done")
+
+        chosen_variants = choose_variants_for_base(base, variants)
+        if not chosen_variants:
+            continue
+
+        update_stage(base, "timeline", "in_progress")
         update_stage(base, "video", "in_progress")
-        render_video(base, timeline_path)
+
+        timeline_ok = True
+        video_ok = True
+
+        for variant in chosen_variants:
+            print(f"\n🎞️ Processando {base}{variant}...")
+            timeline_path = try_build_timeline(base, variant)
+            if not timeline_path:
+                timeline_ok = False
+                video_ok = False
+                continue
+            success = render_video(base, timeline_path, variant)
+            if not success:
+                video_ok = False
+
+        update_stage(base, "timeline", "done" if timeline_ok else "error")
+        update_stage(base, "video", "done" if video_ok else "error")
 
 if __name__ == "__main__":
     main()

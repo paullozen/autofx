@@ -19,10 +19,7 @@ ROOT = Path(__file__).resolve().parent
 PROFILE_FOLDER = ROOT / "chrome_profiles"
 SUGGESTIONS_DIR = IMG_SUGGESTIONS_DIR
 IMG_OUT_DIR = IMG_OUTPUT_DIR
-# PATTERN_PATH = "prompts/SJ_PATTERN_chalk.txt"
-PATTERN_PATH = "prompts/PSYCHO_PATTERN.txt"
-# PATTERN_PATH = "prompts/JS_PATTERN.txt"
-# PATTERN_PATH = "prompts/MOT_PATTERN.txt"
+PATTERN_DIR = ROOT / "prompts"
 
 IMAGEFX_URL = "https://labs.google/fx/tools/image-fx"
 ALL_SUFFIXES = ["_01", "_02", "_03", "_04"]
@@ -32,10 +29,45 @@ def load_text(path):
     with open(path, "r", encoding="utf-8") as f:
         return f.read().strip()
 
+
+def list_pattern_files() -> List[Path]:
+    if not PATTERN_DIR.exists():
+        return []
+    return sorted([p for p in PATTERN_DIR.glob("*_PATTERN*.txt") if p.is_file()])
+
+
+def select_pattern_text() -> str:
+    pattern_files = list_pattern_files()
+    if not pattern_files:
+        print("⚠️ Nenhum arquivo *_PATTERN encontrado em prompts/.")
+        return ""
+
+    print("\n🎨 Patterns disponíveis:")
+    for idx, path in enumerate(pattern_files, 1):
+        print(f"{idx}. {path.name}")
+
+    prompt = f"➡️ Escolha o pattern (1-{len(pattern_files)} | default 1): "
+    raw = input(prompt).strip()
+    try:
+        choice = int(raw or "1")
+    except Exception:
+        choice = 1
+    choice = max(1, min(len(pattern_files), choice))
+    selected = pattern_files[choice - 1]
+
+    try:
+        return load_text(selected)
+    except Exception as exc:
+        print(f"⚠️ Falha ao carregar {selected.name}: {exc}")
+        return ""
+
 ALL_ERRORS = defaultdict(lambda: {"total": 0, "cenas": []})
 # pattern = load_text(PATTERN_PATH)
 # pattern='An off-white stick figure with a solid off-white head, drawn with clean lines. The main character has facial experession and wears a black cap and a black jacket layered over a white hoodie, with realistic folds and subtle shading.'
 pattern=''
+
+LAST_RETRY_DECISION: str | None = None
+PROMPT_LOCK: asyncio.Lock | None = None
 
 def report_errors(base: str):
     total = sum(data["total"] for data in ALL_ERRORS.values())
@@ -68,6 +100,39 @@ def set_images_status(mf: dict, base: str, status: str, images_saved: int | None
         entry["images_saved"] = images_saved
     entry["last_update"] = time.strftime("%Y-%m-%dT%H:%M:%S")
     save_manifest(mf)
+
+
+def prompt_retry_decision(base: str, profile: str, failed_ids: list[int]) -> bool:
+    global LAST_RETRY_DECISION
+    sample = ", ".join(f"{sid:03}" for sid in failed_ids[:5])
+    suffix = "..." if len(failed_ids) > 5 else ""
+    default_hint = ""
+    if LAST_RETRY_DECISION:
+        default_hint = f" [ENTER mantém '{LAST_RETRY_DECISION}']"
+    prompt = (f"⚠️ {base}/{profile}: {len(failed_ids)} cenas falharam "
+              f"(ex.: {sample}{suffix}). Repetir? (s/n){default_hint}: ")
+    answer = input(prompt).strip().lower()
+    if not answer and LAST_RETRY_DECISION:
+        answer = LAST_RETRY_DECISION
+    if answer in ("s", "sim", "y", "yes"):
+        LAST_RETRY_DECISION = "s"
+        return True
+    if answer in ("n", "nao", "não", "no"):
+        LAST_RETRY_DECISION = "n"
+        return False
+    if not answer:
+        LAST_RETRY_DECISION = "n"
+        return False
+    LAST_RETRY_DECISION = answer
+    return answer.startswith(("s", "y"))
+
+
+async def ask_retry_decision(base: str, profile: str, failed_ids: list[int]) -> bool:
+    global PROMPT_LOCK
+    if PROMPT_LOCK is None:
+        PROMPT_LOCK = asyncio.Lock()
+    async with PROMPT_LOCK:
+        return await asyncio.to_thread(prompt_retry_decision, base, profile, failed_ids)
 
 # ==========================
 # PROMPTS / SUGESTÕES
@@ -211,7 +276,8 @@ async def send_prompt_and_collect(page, prompt_text: str, timeout_ms=90000) -> L
 
 
 async def worker_task(worker_id: int, context, base: str, profile: str,
-                      scene_map: Dict[int, str], q: asyncio.Queue, pbar):
+                      scene_map: Dict[int, str], q: asyncio.Queue, pbar,
+                      failures: list[int]):
     page = await context.new_page()
     await page.goto(IMAGEFX_URL, wait_until="domcontentloaded")
     await ensure_editor_ready(page)
@@ -234,9 +300,57 @@ async def worker_task(worker_id: int, context, base: str, profile: str,
         except Exception as e:
             ALL_ERRORS[profile]["total"] += 1
             ALL_ERRORS[profile]["cenas"].append(f"{idx:03}")
+            failures.append(idx)
         finally:
             q.task_done()
     await page.close()
+
+
+async def execute_scene_batch(base: str,
+                              profile: str,
+                              ctx,
+                              scene_map: Dict[int, str],
+                              scene_ids: list[int],
+                              workers_per_profile: int,
+                              position: int,
+                              desc_suffix: str) -> list[int]:
+    if not scene_ids:
+        return []
+
+    q: asyncio.Queue = asyncio.Queue()
+    for sid in scene_ids:
+        q.put_nowait(sid)
+
+    pbar = tqdm(
+        total=len(scene_ids),
+        desc=desc_suffix,
+        position=position,
+        leave=False,
+        dynamic_ncols=True,
+        ncols=100,
+        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{percentage:3.0f}%]"
+    )
+
+    failures: list[int] = []
+    workers = [
+        asyncio.create_task(
+            worker_task(wid, ctx, base, profile, scene_map, q, pbar, failures)
+        )
+        for wid in range(1, max(1, workers_per_profile) + 1)
+    ]
+
+    await q.join()
+    for _ in workers:
+        q.put_nowait(None)
+
+    await asyncio.gather(*workers, return_exceptions=True)
+
+    try:
+        pbar.close()
+    except Exception:
+        pass
+
+    return failures
 
 async def process_profile(base: str,
                           profile: str,
@@ -245,45 +359,25 @@ async def process_profile(base: str,
                           pendentes: list[int],
                           workers_per_profile: int,
                           position: int):
-    # Fila por perfil
-    q: asyncio.Queue = asyncio.Queue()
-    for sid in pendentes:
-        q.put_nowait(sid)
-
-    # Barra por perfil
-    pbar = tqdm(
-        total=len(pendentes),
-        desc=f"{base} / {profile}",
-        position=position,
-        leave=False,
-        dynamic_ncols=True,
-        ncols=100,
-        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{percentage:3.0f}%]"
+    desc = f"{base} / {profile}"
+    failures = await execute_scene_batch(
+        base, profile, ctx, scene_map, pendentes, workers_per_profile, position, desc
     )
 
-    # Workers do perfil
-    workers = [
-        asyncio.create_task(
-            worker_task(wid, ctx, base, profile, scene_map, q, pbar)
+    retry_candidates = sorted(set(failures))
+    while retry_candidates:
+        remaining = [sid for sid in retry_candidates if not is_scene_complete(base, sid)]
+        if not remaining:
+            break
+        wants_retry = await ask_retry_decision(base, profile, remaining)
+        if not wants_retry:
+            break
+        retry_desc = f"{base} / {profile} (retry)"
+        failures = await execute_scene_batch(
+            base, profile, ctx, scene_map, remaining, workers_per_profile, position, retry_desc
         )
-        for wid in range(1, max(1, workers_per_profile) + 1)
-    ]
+        retry_candidates = sorted(set(failures))
 
-    # Espera a fila esvaziar
-    await q.join()
-
-    # Manda sentinela para cada worker
-    for _ in workers:
-        q.put_nowait(None)
-
-    # Aguarda workers
-    await asyncio.gather(*workers, return_exceptions=True)
-
-    # Fecha barra e browser DESTE perfil (libera RAM aqui)
-    try:
-        pbar.close()
-    except Exception:
-        pass
     await ctx.close()
 
 
@@ -451,8 +545,9 @@ async def main():
     except Exception:
         total_images = 1
     total_images = max(1, min(len(ALL_SUFFIXES), total_images))
-    global SUFFIXES
+    global SUFFIXES, pattern
     SUFFIXES = ALL_SUFFIXES[:total_images]
+    pattern = select_pattern_text()
 
     async with async_playwright() as pw:
         for base in selected:
