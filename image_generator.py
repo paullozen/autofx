@@ -25,7 +25,8 @@ PATTERN_PATH = "prompts/PSYCHO_PATTERN.txt"
 # PATTERN_PATH = "prompts/MOT_PATTERN.txt"
 
 IMAGEFX_URL = "https://labs.google/fx/tools/image-fx"
-SUFFIXES = ["_01"]  # salvar apenas _01
+ALL_SUFFIXES = ["_01", "_02", "_03", "_04"]
+SUFFIXES = ALL_SUFFIXES[:1]
 
 def load_text(path):
     with open(path, "r", encoding="utf-8") as f:
@@ -443,6 +444,15 @@ async def main():
     except Exception:
         workers_per_profile = 2
     workers_per_profile = max(1, min(4, workers_per_profile))
+
+    try:
+        total_images_raw = input("➡️ Total images to download? (Max: 4 | Default: 1): ").strip()
+        total_images = int(total_images_raw or "1")
+    except Exception:
+        total_images = 1
+    total_images = max(1, min(len(ALL_SUFFIXES), total_images))
+    global SUFFIXES
+    SUFFIXES = ALL_SUFFIXES[:total_images]
 
     async with async_playwright() as pw:
         for base in selected:
