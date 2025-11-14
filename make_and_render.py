@@ -6,14 +6,20 @@ import cv2
 import numpy as np
 
 from manifesto import load_manifest, update_stage
+from paths import (
+    SRT_OUTPUT_DIR,
+    TIMELINES_DIR,
+    IMG_OUTPUT_DIR,
+    RENDER_OUTPUT_DIR,
+)
 
 # ======================
 # CONFIG
 # ======================
-SRT_DIR        = Path("scripts/srt_outputs")
-TIMELINE_DIR   = Path("scripts/timelines")
-IMGS_DIR       = Path("imgs_output")
-OUTPUT_DIR     = Path("render_output")
+SRT_DIR        = SRT_OUTPUT_DIR
+TIMELINE_DIR   = TIMELINES_DIR
+IMGS_DIR       = IMG_OUTPUT_DIR
+OUTPUT_DIR     = RENDER_OUTPUT_DIR
 
 FPS = 30  # FPS fixo do vídeo
 FOURCCS_TRY = ["mp4v", "avc1", "X264", "H264", "MJPG"]

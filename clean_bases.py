@@ -1,23 +1,34 @@
 import json
 import shutil
 from pathlib import Path
+from paths import (
+    MANIFEST_PATH,
+    VIDEO_OUTPUT_DIR,
+    IMG_OUTPUT_DIR,
+    RENDER_OUTPUT_DIR,
+    SCRIPTS_RENDER_DIR,
+    SRT_OUTPUT_DIR,
+    TIMELINES_DIR,
+    IMG_SUGGESTIONS_DIR,
+    TXT_INBOX_DIR,
+    TXT_PROCESSED_DIR,
+    AUDIO_OUTPUT_DIR,
+    OUTPUT_ROOT,
+    SCRIPTS_ROOT,
+)
 
 # ========================
 # CONFIG
 # ========================
 ROOT = Path(__file__).resolve().parent
-SCRIPTS = ROOT / "scripts"
-MANIFEST_PATH = SCRIPTS / "manifesto.json"
-VIDEOS_DIR = ROOT / "videos"
-IMGS_DIR = ROOT / "imgs_output"
-RENDER_DIR = ROOT / "render_output"
-SCRIPTS_RENDER_DIR = SCRIPTS / "render_output"
-SRT_DIR = SCRIPTS / "srt_outputs"
-TIMELINE_DIR = SCRIPTS / "timelines"
-IMG_SUGGESTIONS_DIR = SCRIPTS / "img_suggestions"
-TXT_INBOX = SCRIPTS / "txt_inbox"
-TXT_PROCESSED = SCRIPTS / "txt_processed"
-AUDIO_DIR = ROOT / "audio"
+VIDEOS_DIR = VIDEO_OUTPUT_DIR
+IMGS_DIR = IMG_OUTPUT_DIR
+RENDER_DIR = RENDER_OUTPUT_DIR
+SRT_DIR = SRT_OUTPUT_DIR
+TIMELINE_DIR = TIMELINES_DIR
+TXT_INBOX = TXT_INBOX_DIR
+TXT_PROCESSED = TXT_PROCESSED_DIR
+AUDIO_DIR = AUDIO_OUTPUT_DIR
 
 # ========================
 # HELPERS
@@ -115,7 +126,28 @@ def clean_video_files(video_name):
             delete_path(path)
             seen.add(key)
 
-    move_txt_to_processed(video_name)
+    # move_txt_to_processed(video_name)
+
+def purge_output_except_txt_processed():
+    """Remove tudo em output/ exceto output/scripts/txt_processed."""
+    if not OUTPUT_ROOT.exists():
+        return
+
+    preserved = TXT_PROCESSED_DIR.resolve()
+    scripts_root = SCRIPTS_ROOT.resolve()
+
+    print("\n🧨 Limpando conteúdo de output/ (exceto txt_processed)...")
+    for child in OUTPUT_ROOT.iterdir():
+        resolved = child.resolve()
+        if resolved == preserved:
+            continue
+        if resolved == scripts_root:
+            for script_child in child.iterdir():
+                if script_child.resolve() == preserved:
+                    continue
+                delete_path(script_child)
+            continue
+        delete_path(child)
 
 # ========================
 # MAIN
@@ -137,6 +169,7 @@ def main():
             del manifest_data[video_name]
 
     save_manifest(manifest_data)
+    purge_output_except_txt_processed()
     print("\n✅ Faxina concluída com sucesso.")
 
 if __name__ == "__main__":

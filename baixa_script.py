@@ -1,9 +1,9 @@
 import os
 import re
-from pathlib import Path
 from dotenv import load_dotenv
 from notion_client import Client
 from notion_utils import normalize_notion_id
+from paths import TXT_DOWNLOADS_DIR
 
 # ==========================
 # CONFIG
@@ -26,7 +26,7 @@ def query_database(database_id: str, **kwargs):
         method="POST",
         body=kwargs,
     )
-OUTPUT_DIR = "scripts/txt_downloads"
+OUTPUT_DIR = TXT_DOWNLOADS_DIR
 
 # ==========================
 # HELPERS
@@ -89,7 +89,7 @@ def get_script_from_page(page_id):
 
 def download_scripts():
     """Faz download de todos os scripts com canal vazio ou 'Seed'"""
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     
     entries = get_notion_entries_by_canal()
     if not entries:
@@ -112,7 +112,7 @@ def download_scripts():
             script_content = get_script_from_page(entry["id"])
             if script_content:
                 safe_title = sanitize_filename(entry['title'])
-                txt_path = os.path.join(OUTPUT_DIR, f"{safe_title}.txt")
+                txt_path = OUTPUT_DIR / f"{safe_title}.txt"
                 with open(txt_path, "w", encoding="utf-8") as f:
                     f.write(script_content)
                 print(f"✅ {safe_title}.txt")
@@ -137,12 +137,12 @@ def download_scripts():
         return
 
     safe_title = sanitize_filename(selected['title'])
-    txt_path = os.path.join(OUTPUT_DIR, f"{safe_title}.txt")
+    txt_path = OUTPUT_DIR / f"{safe_title}.txt"
     with open(txt_path, "w", encoding="utf-8") as f:
         f.write(script_content)
-    
+
     print(f"\n✅ Download concluído!")
-    print(f"📁 Arquivo: {Path(txt_path).resolve()}")
+    print(f"📁 Arquivo: {txt_path.resolve()}")
 
 
 if __name__ == "__main__":

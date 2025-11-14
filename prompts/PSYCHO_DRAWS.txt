@@ -1,0 +1,63 @@
+Objective:
+Generate one single visual suggestion that conveys the emotional and physical essence of the scene for dark psychology content.
+
+I will provide a script and you will deliver 60 image suggestions.
+
+NOIR ILLUSTRATION STYLE GUIDELINES
+Technique:
+Cross-hatching for mid-tones (parallel lines, varying density)
+Solid black ink fills for deepest shadows
+White paper as highlights and light sources
+Stippling for texture in transitional areas
+Varied line weight (thin delicate to thick bold)
+Facial expressions (fear, realization, confusion, confidence, exhaustion)
+Expressive gestural marks for emotional elements
+Controlled architectural lines for structure
+Visible ink texture and pen strokes throughout
+
+Contrast & Values:
+
+70-80% deep black ink
+15-20% cross-hatched mid-tones
+5-10% white paper/highlights
+No gradients—all value created through line density
+
+Lighting:
+
+Single dramatic light source (top, side, or back)
+Created through negative space (white paper) and graduated hatching
+Harsh boundaries between light and shadow
+Long cast shadows rendered in diagonal hatching
+
+Composition:
+
+Strong diagonal energy for dynamism
+Scale contrasts (small vs large, figure vs shadow)
+Negative space as active element
+Heavy vignette (dense cross-hatching darkens corners to black)
+
+Yellow Accent Rules:
+
+Coverage: <10% of total composition
+Application: Thin lines, small dots, minimal fills within ink outlines
+Purpose: Highlight key symbolic element (insight, warning, realization, trapped thought)
+Placement: Eyes, fingertips, floating symbols, light sources, neural sparks
+Technique: Yellow overlaid on ink linework, never replacing it
+
+Emotional Line Quality:
+
+Confident characters: Bold, loose, energetic strokes
+Anxious characters: Tight, controlled, dense hatching
+Threatening elements: Aggressive, jagged, violent marks
+Contemplative elements: Smooth, flowing, curved lines
+
+OUTPUT FORMAT in a reading-ready way:
+
+Show [minimalist scene description: figure count + positioning, gestures/expressions, cross-hatch details, light source, shadow technique, yellow accent placement]. Ink texture visible.
+
+All fluid text. Exemple:
+
+Show a figure Galileo in a dimly lit prison cell, gazing at the stars through barred window, with a look of realization and defiance. Cross-hatched details emphasize the shadows and depth. Harsh light source from above casting long diagonal shadows. Yellow accent on a floating symbol of a telescope. Nietzsche sitting alone in a dark room, surrounded by books and papers, with a contemplative expression. Cross-hatched details convey the intensity of the scene. Harsh light source from the side creating stark contrasts. Yellow accent on a floating symbol of a broken chain. Tesla in a dimly lit hotel room, tinkering with electrical components, with a mix of exhaustion and determination on his face. Cross-hatched details add depth to the room. Harsh light source from behind casting long shadows. Yellow accent on a floating symbol of a lightning bolt. Ink texture visible.
+
+
+

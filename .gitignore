@@ -24,6 +24,8 @@ htmlcov/
 
 # Generated assets & local data
 chrome_profiles/
+output/
+# Legacy output folders kept for backwards compatibility
 audio/
 videos/
 render_output/
@@ -33,5 +35,6 @@ scripts/img_suggestions/
 scripts/srt_outputs/
 scripts/timelines/
 scripts/txt_processed/
-scripts/txt_inbox/*
+scripts/txt_inbox/
+txt_inbox/
 *.json

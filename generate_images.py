@@ -12,14 +12,15 @@ from typing import List, Dict
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 from collections import defaultdict
 from profiles import list_profiles, resolve_user_data_dir
+from paths import MANIFEST_PATH, IMG_SUGGESTIONS_DIR, IMG_OUTPUT_DIR
 
 # ====== PASTAS / CONSTANTES ======
 ROOT = Path(__file__).resolve().parent
 PROFILE_FOLDER = ROOT / "chrome_profiles"
-MANIFEST_PATH = ROOT / "scripts" / "manifesto.json"
-SUGGESTIONS_DIR = ROOT / "scripts" / "img_suggestions"
-IMG_OUT_DIR = ROOT / "imgs_output"
-PATTERN_PATH = "prompts/SJ_PATTERN_chalk.txt"
+SUGGESTIONS_DIR = IMG_SUGGESTIONS_DIR
+IMG_OUT_DIR = IMG_OUTPUT_DIR
+# PATTERN_PATH = "prompts/SJ_PATTERN_chalk.txt"
+PATTERN_PATH = "prompts/PSYCHO_PATTERN.txt"
 # PATTERN_PATH = "prompts/JS_PATTERN.txt"
 # PATTERN_PATH = "prompts/MOT_PATTERN.txt"
 
@@ -31,8 +32,9 @@ def load_text(path):
         return f.read().strip()
 
 ALL_ERRORS = defaultdict(lambda: {"total": 0, "cenas": []})
-pattern = load_text(PATTERN_PATH)
-
+# pattern = load_text(PATTERN_PATH)
+# pattern='An off-white stick figure with a solid off-white head, drawn with clean lines. The main character has facial experession and wears a black cap and a black jacket layered over a white hoodie, with realistic folds and subtle shading.'
+pattern=''
 
 def report_errors(base: str):
     total = sum(data["total"] for data in ALL_ERRORS.values())

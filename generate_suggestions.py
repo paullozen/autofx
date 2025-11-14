@@ -9,6 +9,7 @@ from openai import OpenAI
 from tqdm import tqdm
 import platform
 import time
+from paths import SRT_OUTPUT_DIR, IMG_SUGGESTIONS_DIR
 
 # ==========================
 # ELIGIBILITY
@@ -26,13 +27,15 @@ def list_ready_for_suggestions() -> list[str]:
 # CONFIG
 # ==========================
 ROOT         = Path(__file__).resolve().parent
-INPUT_DIR    = "scripts/srt_outputs"
-OUTPUT_DIR   = "scripts/img_suggestions"
+INPUT_DIR    = SRT_OUTPUT_DIR
+OUTPUT_DIR   = IMG_SUGGESTIONS_DIR
 # PATTERN_PATH = "prompts/MOT_PATTERN.txt"
 # PROMPT_PATH  = "prompts/MOT_DRAWS.txt"
-PATTERN_PATH = "prompts/SJ_PATTERN_chalk.txt"
-PROMPT_PATH  = "prompts/SJ_DRAWS_2.txt"
+# PATTERN_PATH = "prompts/SJ_PATTERN_chalk.txt"
+# PROMPT_PATH  = "prompts/SJ_DRAWS_2.txt"
 
+PROMPT_PATH  = "prompts/PSYCHO_DRAWS.txt"
+PATTERN_PATH = "prompts/PSYCHO_PATTERN.txt"
 # ==========================
 # ENV
 # ==========================
@@ -107,10 +110,9 @@ def group_lines(lines, group_size:int):
     return chunks
 
 def ensure_manifest_for_inbox():
-    for f in os.listdir(INPUT_DIR):
-        if f.endswith(".srt"):
-            base = Path(f).stem
-            ensure_entry(base)
+    INPUT_DIR.mkdir(parents=True, exist_ok=True)
+    for srt_file in INPUT_DIR.glob("*.srt"):
+        ensure_entry(srt_file.stem)
 
 # ==========================
 # CORE
@@ -120,16 +122,16 @@ def process_base(base: str, group_size: int, chosen_profiles: list[str]):
     Gera sugestões a partir do SRT, agrupando por group_size e subdividindo entre os perfis.
     Agora o modelo recebe o contexto global completo do roteiro e o pattern junto ao system prompt.
     """
-    srt_path = os.path.join(INPUT_DIR, f"{base}.srt")
-    base_out_dir = Path(OUTPUT_DIR) / base
+    srt_path = INPUT_DIR / f"{base}.srt"
+    base_out_dir = OUTPUT_DIR / base
     base_out_dir.mkdir(parents=True, exist_ok=True)
 
-    if not os.path.exists(srt_path):
+    if not srt_path.exists():
         update_stage(base, "suggestions", "error: srt não encontrado")
         return
 
     update_stage(base, "suggestions", "in_progress")
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     try:
         lines = read_srt_lines(srt_path)
@@ -138,7 +140,7 @@ def process_base(base: str, group_size: int, chosen_profiles: list[str]):
             return
 
         prompt_core = load_text(PROMPT_PATH)    # SJ_DRAWS.txt
-        pattern     = load_text(PATTERN_PATH)   # SJ_PATTERN 2.txt
+        # pattern     = load_text(PATTERN_PATH)   # SJ_PATTERN 2.txt
         # full_script = "\n".join(lines).strip()
 
         # --- cria o prompt global com contexto e estilo ---
@@ -153,7 +155,7 @@ def process_base(base: str, group_size: int, chosen_profiles: list[str]):
         # )
         full_prompt = (
             f"{prompt_core}\n\n"
-            f"Use the following visual pattern:\n{pattern}\n\n"
+            # f"Use the following visual pattern:\n{pattern}\n\n"
             f"Generate one simple visual suggestion for each line below. "
             f"Keep it concise and literal, starting with 'Show...'"
         )
@@ -274,6 +276,16 @@ def main():
             except Exception:
                 print("❌ Entrada inválida.")
                 return
+
+        # Calcula total estimado de cenas
+        total_lines = 0
+        for base in selected:
+            srt_path = INPUT_DIR / f"{base}.srt"
+            if srt_path.exists():
+                lines = read_srt_lines(srt_path)
+                total_lines += len(lines)
+
+        print(f"\n📊 Total de falas nos arquivos selecionados: {total_lines}")
 
     # Pergunta group_size DEPOIS da escolha dos arquivos
     try:

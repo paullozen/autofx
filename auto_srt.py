@@ -4,13 +4,14 @@ import shutil
 import textwrap
 from pathlib import Path
 from manifesto import ensure_entry, update_stage
+from paths import TXT_INBOX_DIR, SRT_OUTPUT_DIR, TXT_PROCESSED_DIR
 
 # ==========================
 # CONFIG
 # ==========================
-INBOX_DIR = Path("scripts/txt_inbox")
-OUTPUT_DIR = Path("scripts/srt_outputs")
-PROCESSED_DIR = Path("scripts/txt_processed")
+INBOX_DIR = TXT_INBOX_DIR
+OUTPUT_DIR = SRT_OUTPUT_DIR
+PROCESSED_DIR = TXT_PROCESSED_DIR
 
 WPM = 180
 MIN_DUR = 1.0
@@ -71,7 +72,7 @@ def build_srt(sentences):
 # ==========================
 # LOCAL INBOX HELPERS
 # ==========================
-# Notion calls disabled for now; scripts are pulled from scripts/txt_inbox instead.
+# Notion calls disabled for now; scripts are pulled from txt_inbox/ at the repo root instead.
 def list_inbox_files() -> list[Path]:
     INBOX_DIR.mkdir(parents=True, exist_ok=True)
     return sorted(INBOX_DIR.glob("*.txt"))
@@ -165,7 +166,7 @@ def main():
 
 
 def archive_txt(txt_path: Path):
-    """Move txt processado para scripts/txt_processed."""
+    """Move txt processado para output/scripts/txt_processed."""
     if not txt_path.exists():
         return
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)

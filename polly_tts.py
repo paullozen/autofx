@@ -11,13 +11,14 @@ import re
 # IMPORTA MANIFESTO
 # ==========================
 from manifesto import ensure_entry, update_stage, load_manifest
+from paths import TXT_INBOX_DIR, AUDIO_OUTPUT_DIR
 
 # ==========================
 # CONFIG
 # ==========================
 ROOT = Path(__file__).resolve().parent
-INBOX_DIR = ROOT / "scripts" / "txt_inbox"
-AUDIO_DIR = ROOT / "audio"
+INBOX_DIR = TXT_INBOX_DIR
+AUDIO_DIR = AUDIO_OUTPUT_DIR
 MAX_CHARS = 2800  # margem segura (< 3000 do Polly)
 
 # Configs de voz

@@ -1,9 +1,8 @@
 # manifesto.py
 import json
 import time
-from pathlib import Path
 
-MANIFEST_PATH = Path("scripts/manifesto.json")
+from paths import MANIFEST_PATH
 
 
 # ==========================

@@ -2,8 +2,10 @@ import os
 import time
 import re
 import zipfile
+from pathlib import Path
 import googleapiclient.discovery
 from dotenv import load_dotenv
+from paths import COMMENTS_OUTPUT_DIR, OUTPUT_ROOT
 
 # Carrega variáveis de ambiente do arquivo .env
 load_dotenv()
@@ -13,8 +15,9 @@ if not API_KEY:
     raise Exception("Chave da API não encontrada no .env. Certifique-se de ter YT_API_KEY=SEU_TOKEN no arquivo .env.")
 
 # Pasta de destino dos comentários
-COMMENTS_DIR = "comments"
-os.makedirs(COMMENTS_DIR, exist_ok=True)
+COMMENTS_DIR = COMMENTS_OUTPUT_DIR
+COMMENTS_DIR.mkdir(parents=True, exist_ok=True)
+DEFAULT_COMMENTS_ZIP = OUTPUT_ROOT / "comentarios_coletados.zip"
 
 def get_channel_id_from_handle(api_key, handle):
     """Obtém o channel_id a partir do @handle do canal"""
@@ -74,7 +77,7 @@ def get_video_comments(api_key, video_id, max_results=5000):
     # Busca o título do vídeo
     title = get_video_title(api_key, video_id)
     safe_title = sanitize_filename(title)
-    output_file = os.path.join(COMMENTS_DIR, f"{safe_title}.txt")
+    output_file = COMMENTS_DIR / f"{safe_title}.txt"
 
     with open(output_file, "w", encoding="utf-8") as f:
         index = 1
@@ -115,7 +118,7 @@ def extract_video_id(video_input):
 
     return None
 
-def zip_files(file_list, zip_filename="comentarios_coletados.zip"):
+def zip_files(file_list, zip_filename: str | Path = DEFAULT_COMMENTS_ZIP):
     """Cria um único arquivo ZIP contendo todos os arquivos coletados"""
     with zipfile.ZipFile(zip_filename, "w") as zipf:
         for file in file_list:
