@@ -358,34 +358,23 @@ async def process_profile(base: str,
                           scene_map: Dict[int, str],
                           pendentes: list[int],
                           workers_per_profile: int,
-                          position: int):
-    desc = f"{base} / {profile}"
-    failures = await execute_scene_batch(
+                          position: int,
+                          desc_suffix: str | None = None) -> list[int]:
+    desc = desc_suffix or f"{base} / {profile}"
+    await execute_scene_batch(
         base, profile, ctx, scene_map, pendentes, workers_per_profile, position, desc
     )
-
-    retry_candidates = sorted(set(failures))
-    while retry_candidates:
-        remaining = [sid for sid in retry_candidates if not is_scene_complete(base, sid)]
-        if not remaining:
-            break
-        wants_retry = await ask_retry_decision(base, profile, remaining)
-        if not wants_retry:
-            break
-        retry_desc = f"{base} / {profile} (retry)"
-        failures = await execute_scene_batch(
-            base, profile, ctx, scene_map, remaining, workers_per_profile, position, retry_desc
-        )
-        retry_candidates = sorted(set(failures))
-
-    await ctx.close()
+    return [sid for sid in pendentes if not is_scene_complete(base, sid)]
 
 
 # ==========================
 # EXECUÇÃO POR BASE
 # ==========================
 
-async def run_for_base_with_profiles(pw, base: str, workers_per_profile: int):
+async def run_for_base_with_profiles(pw, base: str, workers_per_profile: int, headless: bool):
+    profile_contexts = {}
+    scene_maps = {}
+    ordered_profiles: list[str] = []
     try:
         per_profile_scenes = parse_profile_suggestions(base)
         if not per_profile_scenes:
@@ -427,12 +416,11 @@ async def run_for_base_with_profiles(pw, base: str, workers_per_profile: int):
             save_manifest(mf)
 
         # === ETAPA 1: abrir apenas perfis com pendências ===
-        contexts = []
-        for idx, (profile, _) in enumerate(pending_chosen):
+        for idx, (profile, scene_map) in enumerate(pending_chosen):
             user_data_dir = resolve_user_data_dir(profile)
             ctx = await pw.chromium.launch_persistent_context(
                 user_data_dir=str(user_data_dir),
-                headless=True,
+                headless=headless,
                 channel="chrome",
                 args=[
                     "--disable-blink-features=AutomationControlled",
@@ -445,7 +433,9 @@ async def run_for_base_with_profiles(pw, base: str, workers_per_profile: int):
                 Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
                 if (!window.chrome) window.chrome = { runtime: {} };
             """)
-            contexts.append((profile, ctx))
+            profile_contexts[profile] = ctx
+            scene_maps[profile] = scene_map
+            ordered_profiles.append(profile)
             if idx < len(pending_chosen) - 1:
                 await asyncio.sleep(1.0)
 
@@ -455,7 +445,8 @@ async def run_for_base_with_profiles(pw, base: str, workers_per_profile: int):
         print(f"🎬 RESUMO DE CENAS PENDENTES\n")
         all_pendentes = {}
 
-        for (profile, ctx), (_, scene_map) in zip(contexts, pending_chosen):
+        for profile in ordered_profiles:
+            scene_map = scene_maps[profile]
             scene_ids = sorted(scene_map.keys())
             pendentes = [sid for sid in scene_ids if not is_scene_complete(base, sid)]
             if pendentes:
@@ -472,20 +463,79 @@ async def run_for_base_with_profiles(pw, base: str, workers_per_profile: int):
         print("-" * 60)
 
         supervisors = []
-        position = 0
-        for (profile, ctx), (_, scene_map) in zip(contexts, pending_chosen):
-            pendentes = all_pendentes.get(profile)
-            if not pendentes:
-                continue
-            supervisors.append(asyncio.create_task(
+        profile_positions = {}
+        active_profiles = [p for p in ordered_profiles if p in all_pendentes]
+        for position, profile in enumerate(active_profiles):
+            ctx = profile_contexts[profile]
+            scene_map = scene_maps[profile]
+            pendentes = all_pendentes[profile]
+            profile_positions[profile] = position
+            supervisors.append((profile, asyncio.create_task(
                 process_profile(base, profile, ctx, scene_map, pendentes, workers_per_profile, position)
-            ))
-            position += 1
+            )))
 
         print("-" * 60)
 
-        # Cada perfil fecha seu próprio browser ao terminar
-        await asyncio.gather(*supervisors, return_exceptions=True)
+        results = await asyncio.gather(
+            *(task for _, task in supervisors),
+            return_exceptions=True
+        )
+
+        remaining_by_profile: dict[str, list[int]] = {}
+        for (profile, _), result in zip(supervisors, results):
+            if isinstance(result, Exception):
+                print(f"❌ {base} / {profile}: erro durante processamento: {result}")
+                remaining_by_profile[profile] = all_pendentes.get(profile, [])
+            else:
+                if result:
+                    remaining_by_profile[profile] = result
+
+        # === ETAPA 4: retries globais ===
+        retry_round = 1
+        while remaining_by_profile:
+            normalized = {}
+            for profile, ids in remaining_by_profile.items():
+                unresolved = [sid for sid in ids if not is_scene_complete(base, sid)]
+                if unresolved:
+                    normalized[profile] = unresolved
+            if not normalized:
+                break
+
+            retry_requests = {}
+            for profile, unresolved in normalized.items():
+                wants_retry = await ask_retry_decision(base, profile, unresolved)
+                if wants_retry:
+                    retry_requests[profile] = unresolved
+            if not retry_requests:
+                break
+
+            retry_tasks = []
+            for profile, retry_ids in retry_requests.items():
+                ctx = profile_contexts.get(profile)
+                scene_map = scene_maps.get(profile)
+                if ctx is None or scene_map is None:
+                    continue
+                position = profile_positions.get(profile, len(profile_positions))
+                desc = f"{base} / {profile} (retry #{retry_round})"
+                retry_tasks.append((profile, asyncio.create_task(
+                    process_profile(base, profile, ctx, scene_map, retry_ids, workers_per_profile, position, desc)
+                )))
+
+            if not retry_tasks:
+                break
+
+            retry_results = await asyncio.gather(
+                *(task for _, task in retry_tasks),
+                return_exceptions=True
+            )
+            remaining_by_profile = {}
+            for (profile, _), result in zip(retry_tasks, retry_results):
+                if isinstance(result, Exception):
+                    print(f"❌ {base} / {profile}: erro durante retry: {result}")
+                    remaining_by_profile[profile] = normalized.get(profile, [])
+                elif result:
+                    remaining_by_profile[profile] = result
+            retry_round += 1
 
         all_scene_ids = sorted({sid for _, m in chosen for sid in m.keys()})
         if not all_scene_ids:
@@ -501,6 +551,11 @@ async def run_for_base_with_profiles(pw, base: str, workers_per_profile: int):
             set_images_status(mf_final, base, "in_progress", images_saved=maior)
             print(f"\n⏸️ Parcial: {base} (faltando {len(restam)} cenas) — mantendo 'in_progress'")
     finally:
+        for ctx in profile_contexts.values():
+            try:
+                await ctx.close()
+            except Exception:
+                pass
         report_errors(base)
 
 # ==========================
@@ -549,9 +604,14 @@ async def main():
     SUFFIXES = ALL_SUFFIXES[:total_images]
     pattern = select_pattern_text()
 
+    headless_raw = input("➡️ Executar em modo headless? (ENTER = sim): ").strip().lower()
+    headless = True
+    if headless_raw in ("n", "nao", "não", "no", "false", "0"):
+        headless = False
+
     async with async_playwright() as pw:
         for base in selected:
-            await run_for_base_with_profiles(pw, base, workers_per_profile)
+            await run_for_base_with_profiles(pw, base, workers_per_profile, headless)
 
     def beep():
         system = platform.system().lower()

@@ -226,8 +226,15 @@ def archive_txt(txt_path: Path):
     """Move txt processado para output/txt_processed."""
     if not txt_path.exists():
         return
-    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
-    dest = PROCESSED_DIR / txt_path.name
+    channel_folder: Path
+    stem = txt_path.stem
+    if " - " in stem:
+        channel_name = stem.split(" - ", 1)[0].strip() or "unknown"
+        channel_folder = PROCESSED_DIR / channel_name
+    else:
+        channel_folder = PROCESSED_DIR
+    channel_folder.mkdir(parents=True, exist_ok=True)
+    dest = channel_folder / txt_path.name
     try:
         shutil.move(str(txt_path), str(dest))
         print(f"📁 TXT movido para {dest}")
