@@ -93,9 +93,6 @@ ALL_ERRORS = defaultdict(lambda: {"total": 0, "cenas": []})
 # pattern='An off-white stick figure with a solid off-white head, drawn with clean lines. The main character has facial experession and wears a black cap and a black jacket layered over a white hoodie, with realistic folds and subtle shading.'
 pattern=''
 
-LAST_RETRY_DECISION: str | None = None
-PROMPT_LOCK: asyncio.Lock | None = None
-
 def report_errors(base: str):
     total = sum(data["total"] for data in ALL_ERRORS.values())
     if total == 0:
@@ -129,37 +126,11 @@ def set_images_status(mf: dict, base: str, status: str, images_saved: int | None
     save_manifest(mf)
 
 
-def prompt_retry_decision(base: str, profile: str, failed_ids: list[int]) -> bool:
-    global LAST_RETRY_DECISION
+async def ask_retry_decision(base: str, profile: str, failed_ids: list[int]) -> bool:
     sample = ", ".join(f"{sid:03}" for sid in failed_ids[:5])
     suffix = "..." if len(failed_ids) > 5 else ""
-    default_hint = ""
-    if LAST_RETRY_DECISION:
-        default_hint = f" [ENTER mantém '{LAST_RETRY_DECISION}']"
-    prompt = (f"⚠️ {base}/{profile}: {len(failed_ids)} cenas falharam "
-              f"(ex.: {sample}{suffix}). Repetir? (s/n){default_hint}: ")
-    answer = input(prompt).strip().lower()
-    if not answer and LAST_RETRY_DECISION:
-        answer = LAST_RETRY_DECISION
-    if answer in ("s", "sim", "y", "yes"):
-        LAST_RETRY_DECISION = "s"
-        return True
-    if answer in ("n", "nao", "não", "no"):
-        LAST_RETRY_DECISION = "n"
-        return False
-    if not answer:
-        LAST_RETRY_DECISION = "n"
-        return False
-    LAST_RETRY_DECISION = answer
-    return answer.startswith(("s", "y"))
-
-
-async def ask_retry_decision(base: str, profile: str, failed_ids: list[int]) -> bool:
-    global PROMPT_LOCK
-    if PROMPT_LOCK is None:
-        PROMPT_LOCK = asyncio.Lock()
-    async with PROMPT_LOCK:
-        return await asyncio.to_thread(prompt_retry_decision, base, profile, failed_ids)
+    print(f"⚠️ {base}/{profile}: {len(failed_ids)} cenas falharam (ex.: {sample}{suffix}). Repetindo automaticamente.")
+    return True
 
 # ==========================
 # PROMPTS / SUGESTÕES
