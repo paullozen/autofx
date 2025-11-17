@@ -38,3 +38,4 @@ scripts/txt_processed/
 scripts/txt_inbox/
 txt_inbox/
 *.json
+TESTE_*
