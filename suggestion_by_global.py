@@ -3,16 +3,15 @@ from __future__ import annotations
 
 import json
 import os
-import platform
 import re
 import sys
-import time
 from pathlib import Path
 
 from dotenv import load_dotenv
 from openai import OpenAI
 from tqdm import tqdm
 
+from alerts import ring_bell
 from manifesto import ensure_entry, load_manifest, update_stage
 from paths import IMG_SUGGESTIONS_DIR, TXT_PROCESSED_DIR
 from profiles import choose_profiles, list_profiles
@@ -38,9 +37,6 @@ if not OPENAI_API_KEY:
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 
-# ==========================
-# HELPERS
-# ==========================
 def load_text(path: str | Path) -> str:
     with open(path, "r", encoding="utf-8") as f:
         return f.read().strip()
@@ -386,117 +382,100 @@ def process_base(
 # MAIN
 # ==========================
 def main() -> None:
-    ensure_manifest_for_inbox()
+    try:
+        ensure_manifest_for_inbox()
 
-    args = [a for a in sys.argv[1:] if not a.startswith("-")]
-    candidates = list_ready_for_suggestions()
-    if not candidates:
-        print("Nenhum arquivo pendente para sugestões.")
-        return
-
-    if args:
-        if "todos" in [a.lower() for a in args]:
-            selected = candidates
-        else:
-            selected = args
-    else:
-        print("\n📂 Arquivos disponíveis:")
-        for i, base in enumerate(candidates, 1):
-            print(f"{i}. {base}")
-        print("0. TODOS")
-
-        choice = input("➡️ Digite número(s) separados por vírgula ou 0 para TODOS: ").strip()
-        if not choice:
-            print("❌ Nenhuma escolha feita.")
+        args = [a for a in sys.argv[1:] if not a.startswith("-")]
+        candidates = list_ready_for_suggestions()
+        if not candidates:
+            print("Nenhum arquivo pendente para sugestões.")
             return
 
-        if choice == "0":
-            selected = candidates
+        if args:
+            if "todos" in [a.lower() for a in args]:
+                selected = candidates
+            else:
+                selected = args
         else:
-            try:
-                idxs = [int(x) for x in choice.split(",")]
-                selected = [candidates[i - 1] for i in idxs if 1 <= i <= len(candidates)]
-            except Exception:
-                print("❌ Entrada inválida.")
+            print("\n📂 Arquivos disponíveis:")
+            for i, base in enumerate(candidates, 1):
+                print(f"{i}. {base}")
+            print("0. TODOS")
+
+            choice = input("➡️ Digite número(s) separados por vírgula ou 0 para TODOS: ").strip()
+            if not choice:
+                print("❌ Nenhuma escolha feita.")
                 return
 
-    sentence_counts: dict[str, int | None] = {}
-    total_sentences = 0
-    print("\n📊 Sentenças por arquivo:")
-    for base in selected:
-        count, _ = count_sentences_for_base(base)
-        sentence_counts[base] = count
-        if count is None:
-            print(f" - {base}: TXT processado não localizado")
-        else:
-            print(f" - {base}: {count} sentenças")
-            total_sentences += count
-    if total_sentences == 0:
-        print("⚠️ Não consegui contar sentenças em nenhum arquivo válido.")
-
-    mode_raw = input("➡️ Modo? (1 = sugestões globais, 2 = padrão por falas | ENTER = 2): ").strip()
-    use_global_mode = mode_raw == "1"
-    group_size = 1
-    global_suggestions = 5
-    target_suggestions = None
-
-    if use_global_mode:
-        try:
-            raw = input("➡️ Quantas imagens globais por base? (ENTER = 5): ").strip()
-            global_suggestions = max(1, int(raw) if raw else 5)
-        except ValueError:
-            global_suggestions = 5
-        print(f"\n🎯 Cada base receberá {global_suggestions} sugestões inspiradas no texto completo.")
-    else:
-        try:
-            g = input("➡️ Quantas falas por cena? (ENTER = 1): ").strip()
-            group_size = max(1, int(g) if g else 1)
-        except ValueError:
-            group_size = 1
-
-        print("\n🎯 Cenas a processar (por arquivo):")
-        for base in selected:
-            count = sentence_counts.get(base)
-            if not count:
-                print(f" - {base}: não será processado (sem sentenças)")
-                continue
-            total_scenes = (count + group_size - 1) // group_size
-            print(f" - {base}: {total_scenes} cenas (group={group_size})")
-        raw_target = input("➡️ Total de sugestões por base? (ENTER = usar todas as cenas): ").strip()
-        if raw_target:
-            try:
-                target_suggestions = max(1, int(raw_target))
-            except ValueError:
-                target_suggestions = None
-
-    profiles = list_profiles()
-    chosen_profiles = choose_profiles(profiles)
-
-    for base in selected:
-        if use_global_mode:
-            process_base_full_script(base, global_suggestions, chosen_profiles)
-        else:
-            process_base(base, group_size, chosen_profiles, target_suggestions)
-
-    def beep():
-        system = platform.system().lower()
-        try:
-            if system == "windows":
-                import winsound
-
-                for _ in range(3):
-                    winsound.Beep(1000, 200)
-                    time.sleep(0.1)
+            if choice == "0":
+                selected = candidates
             else:
-                sys.stdout.write("\a" * 3)
-                sys.stdout.flush()
-        except Exception:
-            pass
+                try:
+                    idxs = [int(x) for x in choice.split(",")]
+                    selected = [candidates[i - 1] for i in idxs if 1 <= i <= len(candidates)]
+                except Exception:
+                    print("❌ Entrada inválida.")
+                    return
 
-    print("\n" + "-" * 60)
-    print("🔔")
-    beep()
-    print("✅ Finalizado processamento das bases selecionadas.")
+        sentence_counts: dict[str, int | None] = {}
+        total_sentences = 0
+        print("\n📊 Sentenças por arquivo:")
+        for base in selected:
+            count, _ = count_sentences_for_base(base)
+            sentence_counts[base] = count
+            if count is None:
+                print(f" - {base}: TXT processado não localizado")
+            else:
+                print(f" - {base}: {count} sentenças")
+                total_sentences += count
+        if total_sentences == 0:
+            print("⚠️ Não consegui contar sentenças em nenhum arquivo válido.")
+
+        mode_raw = input("➡️ Modo? (1 = sugestões globais, 2 = padrão por falas | ENTER = 2): ").strip()
+        use_global_mode = mode_raw == "1"
+        group_size = 1
+        global_suggestions = 5
+        target_suggestions = None
+
+        if use_global_mode:
+            try:
+                raw = input("➡️ Quantas imagens globais por base? (ENTER = 5): ").strip()
+                global_suggestions = max(1, int(raw) if raw else 5)
+            except ValueError:
+                global_suggestions = 5
+            print(f"\n🎯 Cada base receberá {global_suggestions} sugestões inspiradas no texto completo.")
+        else:
+            try:
+                g = input("➡️ Quantas falas por cena? (ENTER = 1): ").strip()
+                group_size = max(1, int(g) if g else 1)
+            except ValueError:
+                group_size = 1
+
+            print("\n🎯 Cenas a processar (por arquivo):")
+            for base in selected:
+                count = sentence_counts.get(base)
+                if not count:
+                    print(f" - {base}: não será processado (sem sentenças)")
+                    continue
+                total_scenes = (count + group_size - 1) // group_size
+                print(f" - {base}: {total_scenes} cenas (group={group_size})")
+            raw_target = input("➡️ Total de sugestões por base? (ENTER = usar todas as cenas): ").strip()
+            if raw_target:
+                try:
+                    target_suggestions = max(1, int(raw_target))
+                except ValueError:
+                    target_suggestions = None
+
+        profiles = list_profiles()
+        chosen_profiles = choose_profiles(profiles)
+
+        for base in selected:
+            if use_global_mode:
+                process_base_full_script(base, global_suggestions, chosen_profiles)
+            else:
+                process_base(base, group_size, chosen_profiles, target_suggestions)
+    finally:
+        ring_bell("✅ Finalizado processamento das bases selecionadas.")
 
 
 if __name__ == "__main__":

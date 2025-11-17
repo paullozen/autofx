@@ -1,7 +1,5 @@
 # generate_images_pw.py — auto-perfis pelos arquivos de sugestão
 from tqdm import tqdm
-import platform
-import sys
 import json
 import asyncio
 import base64
@@ -11,6 +9,7 @@ from pathlib import Path
 from typing import List, Dict
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 from collections import defaultdict
+from alerts import ring_bell
 from profiles import list_profiles, resolve_user_data_dir
 from paths import MANIFEST_PATH, IMG_SUGGESTIONS_DIR, IMG_OUTPUT_DIR
 
@@ -92,6 +91,7 @@ ALL_ERRORS = defaultdict(lambda: {"total": 0, "cenas": []})
 # pattern = load_text(PATTERN_PATH)
 # pattern='An off-white stick figure with a solid off-white head, drawn with clean lines. The main character has facial experession and wears a black cap and a black jacket layered over a white hoodie, with realistic folds and subtle shading.'
 pattern=''
+
 
 def report_errors(base: str):
     total = sum(data["total"] for data in ALL_ERRORS.values())
@@ -562,73 +562,57 @@ async def run_for_base_with_profiles(pw, base: str, workers_per_profile: int, he
 
 
 async def main():
-    bases = list_pending_bases_from_manifest()
-    if not bases:
-        print("📭 Nenhuma base pendente para imagens.")
-        return
-
-    print("\n🗂️ Bases disponíveis:")
-    for i, b in enumerate(bases, 1):
-        print(f"{i}. {b}")
-    print("0. todos")
-
-    raw = input("➡️ Selecione (ex: 2 3 ou '0' p/ todos): ").strip().lower()
-    if raw in ("0", "todos"):
-        selected = bases
-    else:
-        try:
-            idxs = [int(x) for x in raw.split()]
-            selected = [bases[i-1] for i in idxs if 1 <= i <= len(bases)]
-        except Exception:
-            print("❌ Entrada inválida.")
-            return
-        if not selected:
-            print("❌ Nada selecionado.")
+    try:
+        bases = list_pending_bases_from_manifest()
+        if not bases:
+            print("📭 Nenhuma base pendente para imagens.")
             return
 
-    try:
-        workers_per_profile = int(input("➡️ Abas por perfil? (sugestão 2): ").strip() or "2")
-    except Exception:
-        workers_per_profile = 2
-    workers_per_profile = max(1, min(4, workers_per_profile))
+        print("\n🗂️ Bases disponíveis:")
+        for i, b in enumerate(bases, 1):
+            print(f"{i}. {b}")
+        print("0. todos")
 
-    try:
-        total_images_raw = input("➡️ Total images to download? (Max: 4 | Default: 1): ").strip()
-        total_images = int(total_images_raw or "1")
-    except Exception:
-        total_images = 1
-    total_images = max(1, min(len(ALL_SUFFIXES), total_images))
-    global SUFFIXES, pattern
-    SUFFIXES = ALL_SUFFIXES[:total_images]
-    pattern = select_pattern_text()
+        raw = input("➡️ Selecione (ex: 2 3 ou '0' p/ todos): ").strip().lower()
+        if raw in ("0", "todos"):
+            selected = bases
+        else:
+            try:
+                idxs = [int(x) for x in raw.split()]
+                selected = [bases[i-1] for i in idxs if 1 <= i <= len(bases)]
+            except Exception:
+                print("❌ Entrada inválida.")
+                return
+            if not selected:
+                print("❌ Nada selecionado.")
+                return
 
-    headless_raw = input("➡️ Executar em modo headless? (ENTER = sim): ").strip().lower()
-    headless = True
-    if headless_raw in ("n", "nao", "não", "no", "false", "0"):
-        headless = False
-
-    async with async_playwright() as pw:
-        for base in selected:
-            await run_for_base_with_profiles(pw, base, workers_per_profile, headless)
-
-    def beep():
-        system = platform.system().lower()
         try:
-            if system == "windows":
-                import winsound
-                for _ in range(3):
-                    winsound.Beep(1000, 200)
-                    time.sleep(0.1)
-            else:
-                sys.stdout.write("\a" * 3)
-                sys.stdout.flush()
+            workers_per_profile = int(input("➡️ Abas por perfil? (sugestão 2): ").strip() or "2")
         except Exception:
-            pass
+            workers_per_profile = 2
+        workers_per_profile = max(1, min(4, workers_per_profile))
 
-    print("\n" + "-" * 60)
-    print("🔔")
-    beep()
-    print("✅ Finalizado processamento das bases selecionadas.")
+        try:
+            total_images_raw = input("➡️ Total images to download? (Max: 4 | Default: 1): ").strip()
+            total_images = int(total_images_raw or "1")
+        except Exception:
+            total_images = 1
+        total_images = max(1, min(len(ALL_SUFFIXES), total_images))
+        global SUFFIXES, pattern
+        SUFFIXES = ALL_SUFFIXES[:total_images]
+        pattern = select_pattern_text()
+
+        headless_raw = input("➡️ Executar em modo headless? (ENTER = sim): ").strip().lower()
+        headless = True
+        if headless_raw in ("n", "nao", "não", "no", "false", "0"):
+            headless = False
+
+        async with async_playwright() as pw:
+            for base in selected:
+                await run_for_base_with_profiles(pw, base, workers_per_profile, headless)
+    finally:
+        ring_bell("✅ Finalizado processamento das bases selecionadas.")
 
 
 if __name__ == "__main__":

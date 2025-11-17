@@ -3,6 +3,7 @@ import re
 import shutil
 import textwrap
 from pathlib import Path
+from alerts import ring_bell
 from manifesto import ensure_entry, update_stage
 from paths import TXT_INBOX_DIR, SRT_OUTPUT_DIR, TXT_PROCESSED_DIR
 
@@ -169,57 +170,60 @@ def process_base(base: str):
     archive_txt(txt_path)
 
 def main():
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
-    ensure_manifest_for_inbox()
-
-    files = list_inbox_files()
-    entries = [f.stem for f in files]
-    if not entries:
-        print(f"Nenhum .txt encontrado em {INBOX_DIR}.")
-        return
-
-    print("\n📜 Arquivos na inbox local:")
-    for i, name in enumerate(entries, start=1):
-        print(f"{i}. {name}")
-
-    choice = input("\nDigite o número do script que deseja processar (ou 0 para todos): ").strip()
-    if not choice:
-        print("Operação cancelada.")
-        return
-
-    if choice == "0":
-        selected = entries
-    else:
-        try:
-            idx = int(choice)
-            if idx < 1 or idx > len(entries):
-                print("Número inválido.")
-                return
-        except ValueError:
-            print("Entrada inválida.")
-            return
-        selected = [entries[idx - 1]]
-
-    print("\n🧮 Contagem de frases por script selecionado:")
-    for name in selected:
-        count, txt_path = count_sentences_for_base(name)
-        if count is None:
-            print(f" - {name}: arquivo não encontrado ({txt_path})")
-        else:
-            print(f" - {name}: {count} frases detectadas")
-
     try:
-        lines_raw = input("➡️ Quantas linhas o SRT deve agrupar por timestamp? (ENTER = 2): ").strip()
-        lines_per_timestamp = int(lines_raw) if lines_raw else BASE_MAX_LINES
-    except ValueError:
-        lines_per_timestamp = BASE_MAX_LINES
-    configure_caption_settings(lines_per_timestamp)
-    print(f"⚙️ Configurado: {LINES_PER_TIMESTAMP} linhas/timestamp, {MAX_CHARS_LINE} chars/linha, duração {MIN_DUR}-{MAX_DUR}s.")
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+        ensure_manifest_for_inbox()
 
-    print("\n🎬 Processando seleção...\n")
-    for name in selected:
-        process_base(name)
+        files = list_inbox_files()
+        entries = [f.stem for f in files]
+        if not entries:
+            print(f"Nenhum .txt encontrado em {INBOX_DIR}.")
+            return
+
+        print("\n📜 Arquivos na inbox local:")
+        for i, name in enumerate(entries, start=1):
+            print(f"{i}. {name}")
+
+        choice = input("\nDigite o número do script que deseja processar (ou 0 para todos): ").strip()
+        if not choice:
+            print("Operação cancelada.")
+            return
+
+        if choice == "0":
+            selected = entries
+        else:
+            try:
+                idx = int(choice)
+                if idx < 1 or idx > len(entries):
+                    print("Número inválido.")
+                    return
+            except ValueError:
+                print("Entrada inválida.")
+                return
+            selected = [entries[idx - 1]]
+
+        print("\n🧮 Contagem de frases por script selecionado:")
+        for name in selected:
+            count, txt_path = count_sentences_for_base(name)
+            if count is None:
+                print(f" - {name}: arquivo não encontrado ({txt_path})")
+            else:
+                print(f" - {name}: {count} frases detectadas")
+
+        try:
+            lines_raw = input("➡️ Quantas linhas o SRT deve agrupar por timestamp? (ENTER = 2): ").strip()
+            lines_per_timestamp = int(lines_raw) if lines_raw else BASE_MAX_LINES
+        except ValueError:
+            lines_per_timestamp = BASE_MAX_LINES
+        configure_caption_settings(lines_per_timestamp)
+        print(f"⚙️ Configurado: {LINES_PER_TIMESTAMP} linhas/timestamp, {MAX_CHARS_LINE} chars/linha, duração {MIN_DUR}-{MAX_DUR}s.")
+
+        print("\n🎬 Processando seleção...\n")
+        for name in selected:
+            process_base(name)
+    finally:
+        ring_bell("✅ Legendas finalizadas.")
 
 
 def archive_txt(txt_path: Path):

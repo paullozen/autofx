@@ -6,8 +6,7 @@ from profiles import list_profiles, choose_profiles
 from dotenv import load_dotenv
 from openai import OpenAI
 from tqdm import tqdm
-import platform
-import time
+from alerts import ring_bell
 from paths import IMG_SUGGESTIONS_DIR, TXT_PROCESSED_DIR
 
 # ==========================
@@ -42,9 +41,6 @@ if not OPENAI_API_KEY:
     raise RuntimeError("Faltando OPENAI_API_KEY no .env")
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# ==========================
-# HELPERS
-# ==========================
 def load_text(path):
     with open(path, "r", encoding="utf-8") as f:
         return f.read().strip()
@@ -236,83 +232,67 @@ def process_base(base: str, group_size: int, chosen_profiles: list[str]):
 # MAIN
 # ==========================
 def main():
-    ensure_manifest_for_inbox()
+    try:
+        ensure_manifest_for_inbox()
 
-    args = [a for a in sys.argv[1:] if not a.startswith("-")]
-    # Lista candidatos do manifesto
-    candidates = list_ready_for_suggestions()
-    if not candidates:
-        print("Nenhum arquivo pendente para sugestões.")
-        return
-
-    # Escolha de bases
-    if args:
-        if "todos" in [a.lower() for a in args]:
-            selected = candidates
-        else:
-            selected = args
-    else:
-        print("\n📂 Arquivos disponíveis:")
-        for i, base in enumerate(candidates, 1):
-            print(f"{i}. {base}")
-        print("0. TODOS")
-
-        choice = input("➡️ Digite número(s) separados por vírgula ou 0 para TODOS: ").strip()
-        if not choice:
-            print("❌ Nenhuma escolha feita.")
+        args = [a for a in sys.argv[1:] if not a.startswith("-")]
+        # Lista candidatos do manifesto
+        candidates = list_ready_for_suggestions()
+        if not candidates:
+            print("Nenhum arquivo pendente para sugestões.")
             return
 
-        if choice == "0":
-            selected = candidates
+        # Escolha de bases
+        if args:
+            if "todos" in [a.lower() for a in args]:
+                selected = candidates
+            else:
+                selected = args
         else:
-            try:
-                idxs = [int(x) for x in choice.split(",")]
-                selected = [candidates[i-1] for i in idxs if 1 <= i <= len(candidates)]
-            except Exception:
-                print("❌ Entrada inválida.")
+            print("\n📂 Arquivos disponíveis:")
+            for i, base in enumerate(candidates, 1):
+                print(f"{i}. {base}")
+            print("0. TODOS")
+
+            choice = input("➡️ Digite número(s) separados por vírgula ou 0 para TODOS: ").strip()
+            if not choice:
+                print("❌ Nenhuma escolha feita.")
                 return
 
-        # Calcula total estimado de cenas
-        total_lines = 0
+            if choice == "0":
+                selected = candidates
+            else:
+                try:
+                    idxs = [int(x) for x in choice.split(",")]
+                    selected = [candidates[i-1] for i in idxs if 1 <= i <= len(candidates)]
+                except Exception:
+                    print("❌ Entrada inválida.")
+                    return
+
+            # Calcula total estimado de cenas
+            total_lines = 0
+            for base in selected:
+                lines, _ = read_base_lines(base)
+                total_lines += len(lines)
+
+            print(f"\n📊 Total de falas nos arquivos selecionados: {total_lines}")
+
+        # Pergunta group_size DEPOIS da escolha dos arquivos
+        try:
+            g = input("➡️ Quantas falas por cena? (ENTER = 1): ").strip()
+            group_size = int(g) if g else 1
+        except ValueError:
+            group_size = 1
+
+        # Escolha dos perfis (0 = todos)
+        profiles = list_profiles()
+        chosen_profiles = choose_profiles(profiles)
+
+        # Processa cada base com a mesma seleção de perfis
         for base in selected:
-            lines, _ = read_base_lines(base)
-            total_lines += len(lines)
-
-        print(f"\n📊 Total de falas nos arquivos selecionados: {total_lines}")
-
-    # Pergunta group_size DEPOIS da escolha dos arquivos
-    try:
-        g = input("➡️ Quantas falas por cena? (ENTER = 1): ").strip()
-        group_size = int(g) if g else 1
-    except ValueError:
-        group_size = 1
-
-    # Escolha dos perfis (0 = todos)
-    profiles = list_profiles()
-    chosen_profiles = choose_profiles(profiles)
-
-    # Processa cada base com a mesma seleção de perfis
-    for base in selected:
-        process_base(base, group_size, chosen_profiles)
-
-    def beep():
-            system = platform.system().lower()
-            try:
-                if system == "windows":
-                    import winsound
-                    for _ in range(3):
-                        winsound.Beep(1000, 200)
-                        time.sleep(0.1)
-                else:
-                    sys.stdout.write("\a" * 3)
-                    sys.stdout.flush()
-            except Exception:
-                pass
-    
-    print("\n" + "-" * 60)
-    print("🔔")
-    beep()
-    print("✅ Finalizado processamento das bases selecionadas.")
+            process_base(base, group_size, chosen_profiles)
+    finally:
+        ring_bell("✅ Finalizado processamento das bases selecionadas.")
 
 if __name__ == "__main__":
     main()

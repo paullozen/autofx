@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 
 from manifesto import load_manifest, update_stage
+from alerts import ring_bell
 from paths import (
     SRT_OUTPUT_DIR,
     TIMELINES_DIR,
@@ -220,41 +221,12 @@ def select_bases_with_images_done(mf: dict):
 
 def choose_variants_for_base(base: str, variants: list[str]) -> list[str]:
     """
-    Permite escolher quais variações (_01, _02, etc.) renderizar para a base.
-    ENTER = todas; 0 = pular base.
+    Previously interactive; now automatically processes every variant found.
     """
     if not variants:
         return []
-
-    print(f"\n🎨 Variações disponíveis para {base}:")
-    for idx, name in enumerate(variants, start=1):
-        print(f"  {idx}. {name}")
-    print("  0. Pular esta base")
-
-    raw = input("➡️ Escolha variações (ex: 1,3 ou '_02') — ENTER = todas: ").strip()
-    if not raw:
-        return variants[:]  # todas
-    if raw == "0":
-        print(f"⏭️ Base {base} pulada.")
-        return []
-
-    tokens = [t.strip() for t in raw.replace(";", ",").split(",") if t.strip()]
-    chosen: list[str] = []
-    for token in tokens:
-        variant_name = None
-        if token.isdigit():
-            idx = int(token)
-            if 1 <= idx <= len(variants):
-                variant_name = variants[idx - 1]
-        else:
-            if token in variants:
-                variant_name = token
-        if variant_name and variant_name not in chosen:
-            chosen.append(variant_name)
-
-    if not chosen:
-        print(f"⚠️ Nenhuma variação válida selecionada para {base}.")
-    return chosen
+    print(f"\n🎨 {base}: usando todas as {len(variants)} variações detectadas ({', '.join(variants)})")
+    return variants[:]
 
 # ======================
 # RENDER
@@ -308,43 +280,46 @@ def render_video(base: str, timeline_path: Path, variant: str) -> bool:
 # MAIN
 # ======================
 def main():
-    mf = load_manifest()
-    selected_bases = select_bases_with_images_done(mf)
+    try:
+        mf = load_manifest()
+        selected_bases = select_bases_with_images_done(mf)
 
-    if not selected_bases:
-        return
+        if not selected_bases:
+            return
 
-    for base in selected_bases:
-        variants = list_image_variants(base)
-        if not variants:
-            print(f"⚠️ Nenhuma variação de imagens encontrada em {IMGS_DIR / base}.")
-            update_stage(base, "timeline", "error")
-            update_stage(base, "video", "error")
-            continue
-
-        chosen_variants = choose_variants_for_base(base, variants)
-        if not chosen_variants:
-            continue
-
-        update_stage(base, "timeline", "in_progress")
-        update_stage(base, "video", "in_progress")
-
-        timeline_ok = True
-        video_ok = True
-
-        for variant in chosen_variants:
-            print(f"\n🎞️ Processando {base}{variant}...")
-            timeline_path = try_build_timeline(base, variant)
-            if not timeline_path:
-                timeline_ok = False
-                video_ok = False
+        for base in selected_bases:
+            variants = list_image_variants(base)
+            if not variants:
+                print(f"⚠️ Nenhuma variação de imagens encontrada em {IMGS_DIR / base}.")
+                update_stage(base, "timeline", "error")
+                update_stage(base, "video", "error")
                 continue
-            success = render_video(base, timeline_path, variant)
-            if not success:
-                video_ok = False
 
-        update_stage(base, "timeline", "done" if timeline_ok else "error")
-        update_stage(base, "video", "done" if video_ok else "error")
+            chosen_variants = choose_variants_for_base(base, variants)
+            if not chosen_variants:
+                continue
+
+            update_stage(base, "timeline", "in_progress")
+            update_stage(base, "video", "in_progress")
+
+            timeline_ok = True
+            video_ok = True
+
+            for variant in chosen_variants:
+                print(f"\n🎞️ Processando {base}{variant}...")
+                timeline_path = try_build_timeline(base, variant)
+                if not timeline_path:
+                    timeline_ok = False
+                    video_ok = False
+                    continue
+                success = render_video(base, timeline_path, variant)
+                if not success:
+                    video_ok = False
+
+            update_stage(base, "timeline", "done" if timeline_ok else "error")
+            update_stage(base, "video", "done" if video_ok else "error")
+    finally:
+        ring_bell("✅ Render finalizado.")
 
 if __name__ == "__main__":
     main()

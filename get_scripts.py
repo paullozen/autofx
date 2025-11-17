@@ -9,6 +9,7 @@ from typing import Iterator
 from dotenv import load_dotenv
 from notion_client import Client
 
+from alerts import ring_bell
 from manifesto import ensure_entry, update_stage
 from notion_utils import normalize_notion_id
 from paths import TXT_INBOX_DIR
@@ -54,9 +55,6 @@ def query_data_source(data_source_id: str, **kwargs):
     )
 
 
-# ==========================
-# HELPERS
-# ==========================
 def sanitize_filename(value: str) -> str:
     """Remove characters forbidden by common filesystems."""
     invalid_chars = r'[<>:"/\\|?*]'
@@ -223,69 +221,72 @@ def resolve_selection(raw: str, options: list[dict]) -> list[dict]:
 # MAIN LOGIC
 # ==========================
 def download_roteiro_scripts():
-    filter_payload = {
-        "and": [
-            {"property": "Step", "select": {"equals": "2. Roteiro"}},
-            {"property": "RTD", "formula": {"string": {"equals": "READY"}}},
-            {"property": "Download", "checkbox": {"equals": False}},
-        ]
-    }
-
-    print("🔎 Procurando scripts com Step = 'Roteiro'...")
-    entries: list[dict] = []
-
-    for page in iter_database_entries(filter_payload):
-        title = get_page_title(page)
-        channel = get_channel_name(page)
-        label = build_display_label(channel, title)
-        entries.append({
-            "id": page["id"],
-            "title": title,
-            "channel": channel,
-            "label": label,
-        })
-
-    if not entries:
-        print("📭 Nada encontrado com Step = 'Roteiro'.")
-        return
-
-    print("\nDisponíveis:")
-    for idx, entry in enumerate(entries, start=1):
-        print(f"{idx}. {entry['label']}")
-
-    raw = input("\n➡️ Digite os números desejados (ex: 1 3) ou ENTER para todos: ").strip()
     try:
-        selected = resolve_selection(raw, entries)
-    except ValueError as exc:
-        print(f"❌ {exc}")
-        return
+        filter_payload = {
+            "and": [
+                {"property": "Step", "select": {"equals": "2. Roteiro"}},
+                {"property": "RTD", "formula": {"string": {"equals": "READY"}}},
+                {"property": "Download", "checkbox": {"equals": False}},
+            ]
+        }
 
-    if not selected:
-        print("⚠️ Nenhum item selecionado.")
-        return
+        print("🔎 Procurando scripts com Step = 'Roteiro'...")
+        entries: list[dict] = []
 
-    total = 0
-    for entry in selected:
-        body = split_sentences_per_line(fetch_script_body(entry["id"]))
-        if not body:
-            print(f"⚠️  '{entry['label']}' não possui conteúdo na coluna 'Script' — pulando.")
-            continue
+        for page in iter_database_entries(filter_payload):
+            title = get_page_title(page)
+            channel = get_channel_name(page)
+            label = build_display_label(channel, title)
+            entries.append({
+                "id": page["id"],
+                "title": title,
+                "channel": channel,
+                "label": label,
+            })
 
-        safe_label = sanitize_filename(entry["label"])
-        output_path = unique_txt_path(safe_label)
-        output_path.write_text(body, encoding="utf-8")
-        base_name = output_path.stem
-        ensure_entry(base_name)
-        update_stage(base_name, "txt", "done", extra={"txt_file": str(output_path.resolve())})
-        mark_download_completed(entry["id"])
-        total += 1
-        rel_path = output_path.relative_to(TXT_INBOX_DIR.parent)
-        print(f"✅ {rel_path}")
+        if not entries:
+            print("📭 Nada encontrado com Step = 'Roteiro'.")
+            return
 
-    if total == 0:
-        print("📭 Nada para salvar.")
-    else:
-        print(f"\n📥 {total} arquivo(s) salvos em {TXT_INBOX_DIR.resolve()}")
+        print("\nDisponíveis:")
+        for idx, entry in enumerate(entries, start=1):
+            print(f"{idx}. {entry['label']}")
+
+        raw = input("\n➡️ Digite os números desejados (ex: 1 3) ou ENTER para todos: ").strip()
+        try:
+            selected = resolve_selection(raw, entries)
+        except ValueError as exc:
+            print(f"❌ {exc}")
+            return
+
+        if not selected:
+            print("⚠️ Nenhum item selecionado.")
+            return
+
+        total = 0
+        for entry in selected:
+            body = split_sentences_per_line(fetch_script_body(entry["id"]))
+            if not body:
+                print(f"⚠️  '{entry['label']}' não possui conteúdo na coluna 'Script' — pulando.")
+                continue
+
+            safe_label = sanitize_filename(entry["label"])
+            output_path = unique_txt_path(safe_label)
+            output_path.write_text(body, encoding="utf-8")
+            base_name = output_path.stem
+            ensure_entry(base_name)
+            update_stage(base_name, "txt", "done", extra={"txt_file": str(output_path.resolve())})
+            mark_download_completed(entry["id"])
+            total += 1
+            rel_path = output_path.relative_to(TXT_INBOX_DIR.parent)
+            print(f"✅ {rel_path}")
+
+        if total == 0:
+            print("📭 Nada para salvar.")
+        else:
+            print(f"\n📥 {total} arquivo(s) salvos em {TXT_INBOX_DIR.resolve()}")
+    finally:
+        ring_bell("✅ Downloads finalizados.")
 
 
 if __name__ == "__main__":
