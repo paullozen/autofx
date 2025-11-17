@@ -115,6 +115,23 @@ def get_script_body(page: dict) -> str:
     return ""
 
 
+def split_sentences_per_line(text: str) -> str:
+    """
+    Normalize whitespace and place each detected sentence on its own line.
+    Fallback: if punctuation-based splitting yields nothing, return the cleaned text.
+    """
+    if not text:
+        return ""
+    cleaned = re.sub(r"\s+", " ", text).strip()
+    if not cleaned:
+        return ""
+    sentences = re.split(r"(?<=[.?!])\s+", cleaned)
+    sentences = [s.strip() for s in sentences if s.strip()]
+    if not sentences:
+        sentences = [cleaned]
+    return "\n".join(sentences)
+
+
 def unique_txt_path(base_name: str) -> Path:
     """Return a txt_inbox path that will not overwrite existing files."""
     TXT_INBOX_DIR.mkdir(parents=True, exist_ok=True)
@@ -167,7 +184,7 @@ def fetch_script_body(page_id: str) -> str:
 
 
 def mark_download_completed(page_id: str):
-    """Check the Download checkbox on the Notion page."""
+    """Mark the Download checkbox as completed on the page."""
     try:
         notion.pages.update(
             page_id=page_id,
@@ -208,7 +225,8 @@ def resolve_selection(raw: str, options: list[dict]) -> list[dict]:
 def download_roteiro_scripts():
     filter_payload = {
         "and": [
-            {"property": "Step", "select": {"equals": "Roteiro"}},
+            {"property": "Step", "select": {"equals": "2. Roteiro"}},
+            {"property": "RTD", "formula": {"string": {"equals": "READY"}}},
             {"property": "Download", "checkbox": {"equals": False}},
         ]
     }
@@ -248,7 +266,7 @@ def download_roteiro_scripts():
 
     total = 0
     for entry in selected:
-        body = fetch_script_body(entry["id"]).strip()
+        body = split_sentences_per_line(fetch_script_body(entry["id"]))
         if not body:
             print(f"⚠️  '{entry['label']}' não possui conteúdo na coluna 'Script' — pulando.")
             continue

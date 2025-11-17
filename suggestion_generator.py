@@ -1,4 +1,3 @@
-# generate_suggestions.py (versão SRT + subdivisão por perfis)
 import os
 import sys
 from pathlib import Path
@@ -9,7 +8,7 @@ from openai import OpenAI
 from tqdm import tqdm
 import platform
 import time
-from paths import SRT_OUTPUT_DIR, IMG_SUGGESTIONS_DIR
+from paths import IMG_SUGGESTIONS_DIR, TXT_PROCESSED_DIR
 
 # ==========================
 # ELIGIBILITY
@@ -18,7 +17,7 @@ def list_ready_for_suggestions() -> list[str]:
     mf = load_manifest()
     ready = []
     for base, info in mf.items():
-        if info.get("srt") == "done" and info.get("suggestions") != 'done':
+        if info.get("txt") == "done" and info.get("suggestions") != 'done':
             ready.append(base)
     return ready
 
@@ -27,15 +26,10 @@ def list_ready_for_suggestions() -> list[str]:
 # CONFIG
 # ==========================
 ROOT         = Path(__file__).resolve().parent
-INPUT_DIR    = SRT_OUTPUT_DIR
+INPUT_DIR    = TXT_PROCESSED_DIR
 OUTPUT_DIR   = IMG_SUGGESTIONS_DIR
-# PATTERN_PATH = "prompts/MOT_PATTERN.txt"
-# PROMPT_PATH  = "prompts/MOT_DRAWS.txt"
-# PATTERN_PATH = "prompts/SJ_PATTERN_chalk.txt"
-# PROMPT_PATH  = "prompts/SJ_DRAWS_2.txt"
 
-PROMPT_PATH  = "prompts/PSYCHO_DRAWS.txt"
-PATTERN_PATH = "prompts/PSYCHO_PATTERN.txt"
+PROMPT_PATH  = "prompts/Scene_Suggestion.txt"
 # ==========================
 # ENV
 # ==========================
@@ -55,26 +49,33 @@ def load_text(path):
     with open(path, "r", encoding="utf-8") as f:
         return f.read().strip()
 
-def read_srt_lines(srt_path: str):
-    """Extrai falas de um arquivo .srt (ignora índices e timestamps)."""
-    lines = []
-    with open(srt_path, "r", encoding="utf-8") as f:
-        block = []
-        for raw in f:
-            line = raw.strip()
-            if not line:
-                if block:
-                    lines.append(" ".join(block))
-                    block = []
-                continue
-            if line.isdigit():
-                continue
-            if "-->" in line:
-                continue
-            block.append(line)
-        if block:
-            lines.append(" ".join(block))
-    return lines
+def locate_processed_txt(base: str) -> Path | None:
+    """
+    Locate the processed TXT for a base.
+    Priority is txt_processed/base/base.txt, falling back to txt_processed/base.txt,
+    and finally any matching file in the tree.
+    """
+    INPUT_DIR.mkdir(parents=True, exist_ok=True)
+    folder_candidate = INPUT_DIR / base / f"{base}.txt"
+    if folder_candidate.exists():
+        return folder_candidate
+
+    top_level = INPUT_DIR / f"{base}.txt"
+    if top_level.exists():
+        return top_level
+
+    matches = list(INPUT_DIR.rglob(f"{base}.txt"))
+    return matches[0] if matches else None
+
+
+def read_base_lines(base: str) -> tuple[list[str], Path | None]:
+    """Read processed TXT lines for the base, stripping blanks."""
+    txt_path = locate_processed_txt(base)
+    if txt_path is None:
+        return [], None
+    with open(txt_path, "r", encoding="utf-8") as f:
+        lines = [line.strip() for line in f if line.strip()]
+    return lines, txt_path
 
 def ask_model(full_prompt, scene_text):
     """Envia o prompt completo ao modelo e retorna a resposta limpa."""
@@ -99,68 +100,56 @@ def detect_completed_scenes(out_path):
                 count += 1
     return count
 
-def group_lines(lines, group_size:int):
+def group_lines(lines, group_size: int):
     if group_size <= 1:
         return lines
     chunks = []
     for i in range(0, len(lines), group_size):
-        chunk = " ".join(lines[i:i+group_size]).strip()
+        chunk_lines = [line for line in lines[i : i + group_size] if line]
+        if not chunk_lines:
+            continue
+        chunk = "\n".join(chunk_lines).strip()
         if chunk:
             chunks.append(chunk)
     return chunks
 
 def ensure_manifest_for_inbox():
     INPUT_DIR.mkdir(parents=True, exist_ok=True)
-    for srt_file in INPUT_DIR.glob("*.srt"):
-        ensure_entry(srt_file.stem)
+    for txt_file in INPUT_DIR.rglob("*.txt"):
+        ensure_entry(txt_file.stem)
 
 # ==========================
 # CORE
 # ==========================
 def process_base(base: str, group_size: int, chosen_profiles: list[str]):
     """
-    Gera sugestões a partir do SRT, agrupando por group_size e subdividindo entre os perfis.
+    Gera sugestões a partir do TXT processado, agrupando por group_size e subdividindo entre os perfis.
     Agora o modelo recebe o contexto global completo do roteiro e o pattern junto ao system prompt.
     """
-    srt_path = INPUT_DIR / f"{base}.srt"
+    txt_lines, txt_path = read_base_lines(base)
     base_out_dir = OUTPUT_DIR / base
     base_out_dir.mkdir(parents=True, exist_ok=True)
 
-    if not srt_path.exists():
-        update_stage(base, "suggestions", "error: srt não encontrado")
+    if txt_path is None:
+        update_stage(base, "suggestions", "error: txt processado não encontrado")
         return
 
     update_stage(base, "suggestions", "in_progress")
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     try:
-        lines = read_srt_lines(srt_path)
-        if not lines:
-            update_stage(base, "suggestions", "error: arquivo srt vazio")
+        if not txt_lines:
+            update_stage(base, "suggestions", "error: arquivo txt vazio")
             return
 
         prompt_core = load_text(PROMPT_PATH)    # SJ_DRAWS.txt
-        # pattern     = load_text(PATTERN_PATH)   # SJ_PATTERN 2.txt
-        # full_script = "\n".join(lines).strip()
-
-        # --- cria o prompt global com contexto e estilo ---
-        # full_prompt = (
-        #     f"{prompt_core}\n\n"
-        #     f"The following is the full script context (for emotional and narrative consistency):\n"
-        #     f"{full_script}\n\n"
-        #     f"---\n\n"
-        #     f"Apply this understanding to each individual line below, generating visually accurate suggestions "
-        #     f"aligned with the following visual pattern:\n{pattern}\n\n"
-        #     f"Do not repeat stylistic descriptions — just describe what should be shown visually, starting with 'Show...'"
-        # )
         full_prompt = (
             f"{prompt_core}\n\n"
-            # f"Use the following visual pattern:\n{pattern}\n\n"
-            f"Generate one simple visual suggestion for each line below. "
-            f"Keep it concise and literal, starting with 'Show...'"
-        )
+            f"--- TEXT ---\n\n"
+            f"Generate ONE concise visual suggestion for the following block of text, starting with 'Show...' and strictly adhering to all policies and formatting rules defined above."
+            )
 
-        scenes = group_lines(lines, group_size)
+        scenes = group_lines(txt_lines, group_size)
         total = len(scenes)
         if total == 0:
             update_stage(base, "suggestions", "error: sem cenas após agrupamento")
@@ -223,14 +212,20 @@ def process_base(base: str, group_size: int, chosen_profiles: list[str]):
 
                     block = [
                         f"Scene {scene_idx}",
-                        f"Original: {scene_text}",
+                        "Original:",
+                        scene_text.replace("\n", " "),
                         f"Suggestion: {final_suggestion}",
                         ""
                     ]
                     f_out.write("\n".join(block) + "\n")
                     f_out.flush()
 
-        update_stage(base, "suggestions", "done", extra={"scenes": total, "group_size": group_size})
+        update_stage(
+            base,
+            "suggestions",
+            "done",
+            extra={"scenes": total, "group_size": group_size, "source": str(txt_path)},
+        )
         print(f"[OK] {base} → dividido entre {len(chosen_profiles)} perfil(is) (cenas: {total}, group={group_size})")
 
     except Exception as e:
@@ -280,10 +275,8 @@ def main():
         # Calcula total estimado de cenas
         total_lines = 0
         for base in selected:
-            srt_path = INPUT_DIR / f"{base}.srt"
-            if srt_path.exists():
-                lines = read_srt_lines(srt_path)
-                total_lines += len(lines)
+            lines, _ = read_base_lines(base)
+            total_lines += len(lines)
 
         print(f"\n📊 Total de falas nos arquivos selecionados: {total_lines}")
 

@@ -19,7 +19,8 @@ ROOT = Path(__file__).resolve().parent
 PROFILE_FOLDER = ROOT / "chrome_profiles"
 SUGGESTIONS_DIR = IMG_SUGGESTIONS_DIR
 IMG_OUT_DIR = IMG_OUTPUT_DIR
-PATTERN_DIR = ROOT / "prompts"
+PROMPTS_DIR = ROOT / "prompts"
+IMG_PATTERNS_FILE = PROMPTS_DIR / "IMG_PATTERNS.txt"
 
 IMAGEFX_URL = "https://labs.google/fx/tools/image-fx"
 ALL_SUFFIXES = ["_01", "_02", "_03", "_04"]
@@ -29,37 +30,63 @@ def load_text(path):
     with open(path, "r", encoding="utf-8") as f:
         return f.read().strip()
 
-
-def list_pattern_files() -> List[Path]:
-    if not PATTERN_DIR.exists():
+def load_img_patterns():
+    """
+    Parse IMG_PATTERNS.txt containing entries in the form 'alias;description'.
+    Allows multi-line descriptions by treating subsequent lines as part of the current alias.
+    """
+    if not IMG_PATTERNS_FILE.exists():
         return []
-    return sorted([p for p in PATTERN_DIR.glob("*_PATTERN*.txt") if p.is_file()])
+    lines = IMG_PATTERNS_FILE.read_text(encoding="utf-8").splitlines()
+    patterns = []
+    current_alias = None
+    current_desc: list[str] = []
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+        lowered = line.lower()
+        if lowered.startswith("pattern") and lowered.endswith(":"):
+            continue
+        if ";" in line:
+            alias_part, desc_part = line.split(";", 1)
+            alias = alias_part.strip()
+            desc = desc_part.strip()
+            if alias and desc:
+                if current_alias:
+                    patterns.append((current_alias, " ".join(current_desc).strip()))
+                current_alias = alias
+                current_desc = [desc]
+                continue
+        if current_alias:
+            current_desc.append(line)
+    if current_alias:
+        patterns.append((current_alias, " ".join(current_desc).strip()))
+    return patterns
 
 
 def select_pattern_text() -> str:
-    pattern_files = list_pattern_files()
-    if not pattern_files:
-        print("⚠️ Nenhum arquivo *_PATTERN encontrado em prompts/.")
+    entries = load_img_patterns()
+    if not entries:
+        print("⚠️ Nenhuma entrada encontrada em IMG_PATTERNS.txt.")
         return ""
 
     print("\n🎨 Patterns disponíveis:")
-    for idx, path in enumerate(pattern_files, 1):
-        print(f"{idx}. {path.name}")
+    for idx, (alias, desc) in enumerate(entries, 1):
+        preview = desc.split(".")[0][:80]
+        suffix = "..." if len(desc) > len(preview) else ""
+        print(f"{idx}. {alias} — {preview}{suffix}")
 
-    prompt = f"➡️ Escolha o pattern (1-{len(pattern_files)} | default 1): "
+    prompt = f"➡️ Escolha o pattern (1-{len(entries)} | default 1): "
     raw = input(prompt).strip()
     try:
         choice = int(raw or "1")
     except Exception:
         choice = 1
-    choice = max(1, min(len(pattern_files), choice))
-    selected = pattern_files[choice - 1]
-
-    try:
-        return load_text(selected)
-    except Exception as exc:
-        print(f"⚠️ Falha ao carregar {selected.name}: {exc}")
-        return ""
+    choice = max(1, min(len(entries), choice))
+    alias, desc = entries[choice - 1]
+    print(f"🎯 Selecionado: {alias}")
+    return desc
 
 ALL_ERRORS = defaultdict(lambda: {"total": 0, "cenas": []})
 # pattern = load_text(PATTERN_PATH)
