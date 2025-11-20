@@ -36,7 +36,14 @@ scripts/srt_outputs/
 scripts/timelines/
 scripts/txt_processed/
 scripts/txt_inbox/
+backend/scripts/img_suggestions/
+backend/scripts/srt_outputs/
+backend/scripts/timelines/
+backend/scripts/txt_processed/
+backend/scripts/txt_inbox/
 txt_inbox/
 *.json
 TESTE_*
 site/
+node_modules/
+frontend/
