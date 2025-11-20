@@ -5,9 +5,9 @@ from typing import Tuple, Optional
 import cv2
 import numpy as np
 
-from manifesto import load_manifest, update_stage
-from alerts import ring_bell
-from paths import (
+from support_scripts.manifesto import load_manifest, update_stage
+from support_scripts.alerts import ring_bell
+from support_scripts.paths import (
     SRT_OUTPUT_DIR,
     TIMELINES_DIR,
     IMG_OUTPUT_DIR,

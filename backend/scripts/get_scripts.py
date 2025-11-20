@@ -9,10 +9,10 @@ from typing import Iterator
 from dotenv import load_dotenv
 from notion_client import Client
 
-from alerts import ring_bell
-from manifesto import ensure_entry, update_stage
-from notion_utils import normalize_notion_id
-from paths import TXT_INBOX_DIR
+from support_scripts.alerts import ring_bell
+from support_scripts.manifesto import ensure_entry, update_stage
+from support_scripts.notion_utils import normalize_notion_id
+from support_scripts.paths import TXT_INBOX_DIR
 
 # ==========================
 # CONFIG

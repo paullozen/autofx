@@ -6,7 +6,7 @@ import zipfile
 from pathlib import Path
 import googleapiclient.discovery
 from dotenv import load_dotenv
-from paths import COMMENTS_OUTPUT_DIR, OUTPUT_ROOT
+from support_scripts.paths import COMMENTS_OUTPUT_DIR, OUTPUT_ROOT
 
 # Carrega variáveis de ambiente do arquivo .env
 load_dotenv()

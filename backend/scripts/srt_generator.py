@@ -3,9 +3,9 @@ import re
 import shutil
 import textwrap
 from pathlib import Path
-from alerts import ring_bell
-from manifesto import ensure_entry, update_stage
-from paths import TXT_INBOX_DIR, SRT_OUTPUT_DIR, TXT_PROCESSED_DIR
+from support_scripts.alerts import ring_bell
+from support_scripts.manifesto import ensure_entry, update_stage
+from support_scripts.paths import TXT_INBOX_DIR, SRT_OUTPUT_DIR, TXT_PROCESSED_DIR
 
 # ==========================
 # CONFIG

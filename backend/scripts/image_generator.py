@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import List, Dict
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 from collections import defaultdict
-from alerts import ring_bell
+from support_scripts.alerts import ring_bell
 from profiles import list_profiles, resolve_user_data_dir
-from paths import MANIFEST_PATH, IMG_SUGGESTIONS_DIR, IMG_OUTPUT_DIR
+from support_scripts.paths import MANIFEST_PATH, IMG_SUGGESTIONS_DIR, IMG_OUTPUT_DIR
 
 # ====== PASTAS / CONSTANTES ======
 ROOT = Path(__file__).resolve().parent

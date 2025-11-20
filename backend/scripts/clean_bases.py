@@ -1,7 +1,7 @@
 import json
 import shutil
 from pathlib import Path
-from paths import (
+from support_scripts.paths import (
     MANIFEST_PATH,
     VIDEO_OUTPUT_DIR,
     IMG_OUTPUT_DIR,

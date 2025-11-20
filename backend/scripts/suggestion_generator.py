@@ -11,9 +11,9 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from tqdm import tqdm
 
-from alerts import ring_bell
-from manifesto import ensure_entry, load_manifest, update_stage
-from paths import IMG_SUGGESTIONS_DIR, TXT_PROCESSED_DIR
+from support_scripts.alerts import ring_bell
+from support_scripts.manifesto import ensure_entry, load_manifest, update_stage
+from support_scripts.paths import IMG_SUGGESTIONS_DIR, TXT_PROCESSED_DIR
 from profiles import choose_profiles, list_profiles
 
 # ==========================
